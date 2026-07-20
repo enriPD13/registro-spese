@@ -111,7 +111,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v2.4 · <span id="env-label"></span></div>
+      <div class="sub">v2.5 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -126,7 +126,7 @@
 
 <!-- form modal -->
 <div class="overlay" id="form-overlay">
-  <div class="sheet" onclick="event.stopPropagation()">
+  <div class="sheet">
     <h2 class="serif" id="form-title">Nuova spesa</h2>
     <div class="mb"><label class="label">Descrizione</label>
       <input class="input" id="f-desc" placeholder="Es. Assicurazione moto"></div>
@@ -474,7 +474,7 @@ function renderImpostazioni(){
   </div>
   <div class="card">
     <span class="label">Aggiornamenti</span>
-    <div class="small" style="margin-bottom:10px">Versione installata: v2.4. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
+    <div class="small" style="margin-bottom:10px">Versione installata: v2.5. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
     <button class="btn btn-ink" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
@@ -705,7 +705,9 @@ document.getElementById("scan-input").addEventListener("change",ev=>{
 });
 document.getElementById("btn-cancel").addEventListener("click",closeForm);
 document.getElementById("btn-save").addEventListener("click",saveForm);
-document.getElementById("form-overlay").addEventListener("click",closeForm);
+document.getElementById("form-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="form-overlay")closeForm();
+});
 document.getElementById("f-rec-toggle").addEventListener("click",()=>{
   const cb=document.getElementById("f-rec");cb.checked=!cb.checked;
   document.getElementById("f-rec-toggle").classList.toggle("on",cb.checked);
