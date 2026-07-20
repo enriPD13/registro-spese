@@ -111,7 +111,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v2.5 · <span id="env-label"></span></div>
+      <div class="sub">v3.2 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -145,9 +145,72 @@
     </div>
     <div class="mb" id="f-freq-wrap" style="display:none"><label class="label">Frequenza</label>
       <div class="chips" id="f-freqs"></div></div>
+    <div class="mb" id="f-var-wrap" style="display:none">
+      <div class="toggle" id="f-var-toggle">
+        <input type="checkbox" id="f-var" style="width:18px;height:18px;accent-color:var(--orange);pointer-events:none">
+        <div><div style="font-weight:700;font-size:14px">Importo variabile (bollette)</div>
+          <div class="small">Registri l'importo reale a ogni periodo; l'app stima i futuri dalla bolletta di un anno prima. Lascia l'importo vuoto se non lo conosci ancora.</div></div>
+      </div>
+    </div>
     <div class="frow" style="margin-top:16px">
       <button class="btn btn-ghost" style="flex:1" id="btn-cancel">Annulla</button>
       <button class="btn btn-orange" style="flex:2" id="btn-save">Aggiungi spesa</button>
+    </div>
+  </div>
+</div>
+
+<!-- templates modal -->
+<div class="overlay" id="tpl-overlay">
+  <div class="sheet">
+    <h2 class="serif">Spese suggerite</h2>
+    <div class="small" style="margin-bottom:12px">Seleziona le voci che ti riguardano: vengono create come ricorrenti a importo variabile, pronte per registrare le bollette. Poi apri ciascuna con ✎ per impostare la data della prima scadenza.</div>
+    <div id="tpl-list"></div>
+    <div class="frow" style="margin-top:16px">
+      <button class="btn btn-ghost" style="flex:1" id="tpl-cancel">Annulla</button>
+      <button class="btn btn-orange" style="flex:2" id="tpl-add">Aggiungi selezionate</button>
+    </div>
+  </div>
+</div>
+
+<!-- template editor modal -->
+<div class="overlay" id="tpe-overlay">
+  <div class="sheet">
+    <h2 class="serif" id="tpe-title">Nuova voce</h2>
+    <div class="mb"><label class="label">Nome</label>
+      <input class="input" id="t-desc" placeholder="Es. Retta palestra"></div>
+    <div class="mb"><label class="label">Categoria</label>
+      <div class="chips" id="t-cats"></div></div>
+    <div class="mb"><label class="label">Frequenza</label>
+      <div class="chips" id="t-freqs"></div></div>
+    <div class="toggle mb" id="t-var-toggle">
+      <input type="checkbox" id="t-var" style="width:18px;height:18px;accent-color:var(--orange);pointer-events:none">
+      <div><div style="font-weight:700;font-size:14px">Importo variabile</div>
+        <div class="small">Come le bollette: registri l'importo reale a ogni periodo</div></div>
+    </div>
+    <div class="mb"><label class="label">Importo (€)</label>
+      <input class="input" id="t-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00">
+      <div class="small" style="margin-top:4px">Facoltativo per le voci variabili, obbligatorio per quelle fisse.</div></div>
+    <div class="frow" style="margin-top:8px">
+      <button class="btn btn-ghost" style="flex:1" id="tpe-cancel">Annulla</button>
+      <button class="btn btn-orange" style="flex:2" id="tpe-save">Salva voce</button>
+    </div>
+  </div>
+</div>
+
+<!-- bill modal -->
+<div class="overlay" id="bill-overlay">
+  <div class="sheet">
+    <h2 class="serif">Registra bolletta</h2>
+    <div class="small" id="bill-name" style="margin-bottom:12px"></div>
+    <div class="frow mb">
+      <div><label class="label">Importo effettivo (€)</label>
+        <input class="input" id="b-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00"></div>
+      <div><label class="label">Data bolletta</label>
+        <input class="input" id="b-date" type="date"></div>
+    </div>
+    <div class="frow" style="margin-top:8px">
+      <button class="btn btn-ghost" style="flex:1" id="bill-cancel">Annulla</button>
+      <button class="btn btn-orange" style="flex:2" id="bill-save">Salva importo</button>
     </div>
   </div>
 </div>
@@ -180,6 +243,19 @@ const DEFAULT_CATS=[
 ];
 const CAT_COLORS=["#3E4A3A","#8A9B7E","#C4682F","#B0793A","#5C6E54","#8B887C","#A65D57","#6B7A8F"];
 const KEY="registro-spese-v2";
+const DEFAULT_TEMPLATES=[
+  {id:"t-luce",group:"Casa & Utenze",desc:"Bolletta luce",cat:"utenze",freq:"bimestrale",variable:true},
+  {id:"t-gas",group:"Casa & Utenze",desc:"Bolletta gas",cat:"utenze",freq:"bimestrale",variable:true},
+  {id:"t-acqua",group:"Casa & Utenze",desc:"Bolletta acqua",cat:"utenze",freq:"trimestrale",variable:true},
+  {id:"t-tari",group:"Casa & Utenze",desc:"TARI",cat:"utenze",freq:"semestrale",variable:true},
+  {id:"t-mutuo",group:"Casa & Utenze",desc:"Mutuo",cat:"casa",freq:"mensile",variable:true},
+  {id:"t-caldaia",group:"Casa & Utenze",desc:"Manutenzione caldaia",cat:"casa",freq:"annuale",variable:true},
+  {id:"t-imposta",group:"Fisco & Contributi (forfettario)",desc:"Imposta sostitutiva (acconto/saldo)",cat:"fisco",freq:"semestrale",variable:true},
+  {id:"t-inps",group:"Fisco & Contributi (forfettario)",desc:"Contributi INPS Gestione Separata",cat:"fisco",freq:"semestrale",variable:true},
+  {id:"t-carb",group:"Auto & Moto",desc:"Carburante",cat:"trasporti",freq:"mensile",variable:true},
+  {id:"t-rcauto",group:"Auto & Moto",desc:"RC Auto",cat:"trasporti",freq:"annuale",variable:true},
+  {id:"t-rcmoto",group:"Auto & Moto",desc:"RC Moto",cat:"trasporti",freq:"annuale",variable:true},
+];
 const MESI=["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
 const MESI_FULL=["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
 const GIORNI=["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
@@ -191,6 +267,7 @@ const S={
   tab:"riepilogo",viewY:now.getFullYear(),viewM:now.getMonth(),
   calY:now.getFullYear(),calM:now.getMonth(),selDay:null,
   filterCat:"all",editId:null,notice:"",error:"",
+  templates:[],
 };
 let charts=[];
 
@@ -217,7 +294,7 @@ const store={
   }
 };
 async function persist(){
-  const ok=await store.save({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey});
+  const ok=await store.save({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,templates:S.templates});
   if(!ok&&store.mode!=="none"){S.error="Salvataggio non riuscito: i dati restano in memoria per questa sessione.";}
 }
 
@@ -263,6 +340,33 @@ function dayExpenses(y,m,day){
   });
 }
 
+function amountFor(e,y,m){
+  if(!e.variable)return{val:Number(e.amount),est:false};
+  const hist=e.history||[];
+  const inMonth=(h,yy,mm)=>{const d=new Date(h.date+"T00:00:00");return d.getFullYear()===yy&&d.getMonth()===mm;};
+  const actual=hist.find(h=>inMonth(h,y,m));
+  if(actual)return{val:Number(actual.amount),est:false};
+  const lastYear=hist.find(h=>inMonth(h,y-1,m));
+  if(lastYear)return{val:Number(lastYear.amount),est:true};
+  const before=hist.filter(h=>new Date(h.date+"T00:00:00")<new Date(y,m,1))
+    .sort((a,b)=>a.date<b.date?1:-1)[0];
+  if(before)return{val:Number(before.amount),est:true};
+  if(e.amount)return{val:Number(e.amount),est:true};
+  return{val:null,est:true};
+}
+function amountLabel(e,y,m){
+  if(!e.variable)return eur(e.amount);
+  let a;
+  if(y!=null)a=amountFor(e,y,m);
+  else{
+    const hist=(e.history||[]).slice().sort((x,z)=>x.date<z.date?1:-1);
+    a=hist.length?{val:Number(hist[0].amount),est:true}
+      :(e.amount?{val:Number(e.amount),est:true}:{val:null,est:true});
+  }
+  if(a.val==null)return "—";
+  return (a.est?"~":"")+eur(a.val);
+}
+
 /* ================= RENDER ================= */
 function render(){
   charts.forEach(c=>c.destroy());charts=[];
@@ -291,9 +395,11 @@ function renderTabs(){
 /* ---------- Riepilogo ---------- */
 function renderRiepilogo(){
   const ex=monthExpenses(S.viewY,S.viewM);
-  const tot=ex.reduce((s,e)=>s+Number(e.amount),0);
-  const rec=ex.filter(e=>e.recurring).reduce((s,e)=>s+Number(e.amount),0);
-  const byCat={};ex.forEach(e=>{byCat[e.categoryId]=(byCat[e.categoryId]||0)+Number(e.amount);});
+  const av=e=>amountFor(e,S.viewY,S.viewM).val||0;
+  const anyEst=ex.some(e=>e.variable&&amountFor(e,S.viewY,S.viewM).est);
+  const tot=ex.reduce((s,e)=>s+av(e),0);
+  const rec=ex.filter(e=>e.recurring).reduce((s,e)=>s+av(e),0);
+  const byCat={};ex.forEach(e=>{byCat[e.categoryId]=(byCat[e.categoryId]||0)+av(e);});
   const cats=Object.entries(byCat).map(([id,t])=>({c:catById(id),t})).sort((a,b)=>b.t-a.t);
   return `
   <div class="card center" style="padding-top:18px">
@@ -302,7 +408,8 @@ function renderRiepilogo(){
       <div class="serif monthname">${MESI_FULL[S.viewM]} ${S.viewY}</div>
       <button class="btn btn-ghost" data-act="month" data-d="1">›</button>
     </div>
-    <div class="serif bigtotal">${eur(tot)}</div>
+    <div class="serif bigtotal">${anyEst?"~":""}${eur(tot)}</div>
+    ${anyEst?`<div class="small">Il totale include importi stimati (~)</div>`:""}
     <div class="totrow">
       <span>Ricorrenti <strong style="color:var(--orange)">${eur(rec)}</strong></span>
       <span>Una tantum <strong style="color:var(--ink)">${eur(tot-rec)}</strong></span>
@@ -318,7 +425,7 @@ function renderRiepilogo(){
 }
 function drawCharts(){
   const ex=monthExpenses(S.viewY,S.viewM);
-  const byCat={};ex.forEach(e=>{byCat[e.categoryId]=(byCat[e.categoryId]||0)+Number(e.amount);});
+  const byCat={};ex.forEach(e=>{byCat[e.categoryId]=(byCat[e.categoryId]||0)+(amountFor(e,S.viewY,S.viewM).val||0);});
   const cats=Object.entries(byCat).map(([id,t])=>({c:catById(id),t})).sort((a,b)=>b.t-a.t);
   const cEl=document.getElementById("chart-cat");
   if(cEl&&cats.length){
@@ -333,7 +440,8 @@ function drawCharts(){
   for(let i=5;i>=0;i--){
     const d=new Date(S.viewY,S.viewM-i,1);
     labels.push(MESI[d.getMonth()]);
-    vals.push(monthExpenses(d.getFullYear(),d.getMonth()).reduce((s,e)=>s+Number(e.amount),0));
+    const yy=d.getFullYear(),mm=d.getMonth();
+    vals.push(monthExpenses(yy,mm).reduce((s,e)=>s+(amountFor(e,yy,mm).val||0),0));
   }
   const tEl=document.getElementById("chart-trend");
   if(tEl){
@@ -353,12 +461,12 @@ function renderCalendario(){
   const startOffset=(first.getDay()+6)%7; /* Monday first */
   const daysInMonth=new Date(y,m+1,0).getDate();
   const today=new Date();
-  const monthTot=monthExpenses(y,m).reduce((s,e)=>s+Number(e.amount),0);
+  const monthTot=monthExpenses(y,m).reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
   let cells=GIORNI.map(g=>`<div class="cal-head">${g}</div>`).join("");
   for(let i=0;i<startOffset;i++)cells+=`<div></div>`;
   for(let d=1;d<=daysInMonth;d++){
     const ex=dayExpenses(y,m,d);
-    const tot=ex.reduce((s,e)=>s+Number(e.amount),0);
+    const tot=ex.reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
     const isToday=today.getFullYear()===y&&today.getMonth()===m&&today.getDate()===d;
     const dots=[...new Set(ex.map(e=>catById(e.categoryId).color))].slice(0,4)
       .map(c=>`<span class="cal-dot" style="background:${c}"></span>`).join("");
@@ -370,9 +478,9 @@ function renderCalendario(){
   let detail="";
   if(S.selDay){
     const ex=dayExpenses(y,m,S.selDay);
-    const tot=ex.reduce((s,e)=>s+Number(e.amount),0);
+    const tot=ex.reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
     detail=`<div class="card"><span class="label">${S.selDay} ${MESI_FULL[m]} ${y} — ${eur(tot)}</span>
-      ${ex.length?ex.map(expenseRow).join(""):`<div class="empty">Nessuna spesa in questo giorno.</div>`}</div>`;
+      ${ex.length?ex.map(e=>expenseRow(e,y,m)).join(""):`<div class="empty">Nessuna spesa in questo giorno.</div>`}</div>`;
   }
   return `
   <div class="card">
@@ -387,16 +495,16 @@ function renderCalendario(){
 }
 
 /* ---------- Spese ---------- */
-function expenseRow(e){
+function expenseRow(e,y,m){
   const c=catById(e.categoryId);
   const f=FREQS.find(x=>x.id===e.freq);
   return `<div class="row">
     <span class="dot" style="background:${c.color}"></span>
     <div class="rdesc">
-      <div class="rtitle">${esc(e.desc)}${e.recurring?`<span class="rtag">${f?f.label:"Ricorrente"}</span>`:""}</div>
+      <div class="rtitle">${esc(e.desc)}${e.recurring?`<span class="rtag">${f?f.label:"Ricorrente"}</span>`:""}${e.variable?`<span class="rtag" style="background:var(--sage-light);color:var(--ink)">Variabile</span>`:""}</div>
       <div class="rmeta">${esc(c.name)} · ${new Date(e.date+"T00:00:00").toLocaleDateString("it-IT")}</div>
     </div>
-    <div class="ramount serif">${eur(e.amount)}</div>
+    <div class="ramount serif">${amountLabel(e,y,m)}</div>
     <button class="iconbtn" data-act="edit" data-id="${e.id}">✎</button>
     <button class="iconbtn" data-act="del" data-id="${e.id}">✕</button>
   </div>`;
@@ -409,7 +517,7 @@ function renderSpese(){
     <button class="chip ${S.filterCat==="all"?"active":""}" data-act="filter" data-id="all">Tutte</button>
     ${S.categories.map(c=>`<button class="chip ${S.filterCat===c.id?"active":""}" data-act="filter" data-id="${c.id}">${esc(c.name)}</button>`).join("")}
   </div>
-  <div class="card">${list.length?list.map(expenseRow).join(""):`<div class="empty">Nessuna spesa registrata.</div>`}</div>`;
+  <div class="card">${list.length?list.map(e=>expenseRow(e)).join(""):`<div class="empty">Nessuna spesa registrata.</div>`}</div>`;
 }
 
 /* ---------- Scadenze ---------- */
@@ -428,7 +536,10 @@ function renderScadenze(){
         <div class="rtitle">${esc(e.desc)}</div>
         <div class="rmeta" style="${urg?"color:var(--orange);font-weight:700":""}">${d===0?"Scade oggi":d===1?"Scade domani":"Tra "+d+" giorni"} · ${f?f.label:""}</div>
       </div>
-      <div class="ramount serif">${eur(e.amount)}</div>
+      <div style="text-align:right">
+        <div class="ramount serif">${amountLabel(e,e.due.getFullYear(),e.due.getMonth())}</div>
+        ${e.variable?`<button class="chip" data-act="bill" data-id="${e.id}" style="margin-top:5px">€ Registra</button>`:""}
+      </div>
     </div>`;}).join("")
   :`<div class="empty">Nessuna spesa ricorrente. Aggiungi una spesa e attiva "Ricorrente".</div>`}</div>`;
 }
@@ -473,8 +584,13 @@ function renderImpostazioni(){
     <input type="file" id="import-input" accept=".json" style="display:none">
   </div>
   <div class="card">
+    <span class="label">Spese suggerite</span>
+    <div class="small" style="margin-bottom:10px">Catalogo di spese ricorrenti tipiche (utenze, fisco, assicurazioni) già configurate: le selezioni e le aggiungi in un colpo solo.</div>
+    <button class="btn btn-ink" data-act="templates">Apri il catalogo</button>
+  </div>
+  <div class="card">
     <span class="label">Aggiornamenti</span>
-    <div class="small" style="margin-bottom:10px">Versione installata: v2.5. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
+    <div class="small" style="margin-bottom:10px">Versione installata: v3.2. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
     <button class="btn btn-ink" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
@@ -496,6 +612,9 @@ function openForm(pre){
   document.getElementById("f-rec").checked=!!f.recurring;
   document.getElementById("f-rec-toggle").classList.toggle("on",!!f.recurring);
   document.getElementById("f-freq-wrap").style.display=f.recurring?"block":"none";
+  document.getElementById("f-var-wrap").style.display=f.recurring?"block":"none";
+  document.getElementById("f-var").checked=!!f.variable;
+  document.getElementById("f-var-toggle").classList.toggle("on",!!f.variable);
   document.getElementById("f-date-label").textContent=f.recurring?"Prima scadenza":"Data";
   document.getElementById("f-cats").innerHTML=S.categories.map(c=>
     `<button class="chip ${f.categoryId===c.id?"active":""}" data-fcat="${c.id}">${esc(c.name)}</button>`).join("");
@@ -507,12 +626,18 @@ function closeForm(){S.editId=null;document.getElementById("form-overlay").class
 function saveForm(){
   const desc=document.getElementById("f-desc").value.trim();
   const amount=Number(document.getElementById("f-amount").value);
-  if(!desc||!amount||amount<=0)return;
+  const rec=document.getElementById("f-rec").checked;
+  const isVar=rec&&document.getElementById("f-var").checked;
+  if(!desc)return;
+  if(!isVar&&(!amount||amount<=0))return;
   const catBtn=document.querySelector("#f-cats .chip.active");
   const freqBtn=document.querySelector("#f-freqs .chip.active");
-  const rec=document.getElementById("f-rec").checked;
+  const prev=S.editId?S.expenses.find(x=>x.id===S.editId):null;
   const record={
-    id:S.editId||"e"+Date.now(),desc,amount,
+    id:S.editId||"e"+Date.now(),desc,
+    amount:isVar?(amount>0?amount:null):amount,
+    variable:isVar,
+    history:prev&&prev.history?prev.history:[],
     categoryId:catBtn?catBtn.dataset.fcat:"altro",
     date:document.getElementById("f-date").value||todayISO(),
     recurring:rec,freq:rec?(freqBtn?freqBtn.dataset.ffreq:"mensile"):null,
@@ -647,6 +772,121 @@ function importBackup(file){
   r.readAsText(file);
 }
 
+/* ================= TEMPLATES ================= */
+function openTpl(){
+  const groups=[];
+  S.templates.forEach(t=>{
+    const g=groups.find(x=>x.name===t.group);
+    if(g)g.items.push(t);else groups.push({name:t.group||"Personalizzate",items:[t]});
+  });
+  document.getElementById("tpl-list").innerHTML=groups.map(g=>
+    `<div class="label" style="margin-top:10px">${esc(g.name)}</div>`+
+    g.items.map(t=>{
+      const exists=S.expenses.some(e=>e.desc.toLowerCase()===t.desc.toLowerCase());
+      const f=FREQS.find(x=>x.id===t.freq);
+      const c=catById(t.cat);
+      return `<div class="row" style="${exists?"opacity:.45":""}">
+        <input type="checkbox" class="tpl-check" data-tid="${t.id}" ${exists?"disabled":"checked"}
+          style="width:18px;height:18px;accent-color:var(--orange);flex-shrink:0">
+        <div class="rdesc">
+          <div class="rtitle">${esc(t.desc)}${exists?` <span class="small">(già presente)</span>`:""}</div>
+          <div class="rmeta">${esc(c.name)} · ${f?f.label:""} · ${t.variable?"variabile":"fisso"+(t.amount?" "+eur(t.amount):"")}</div>
+        </div>
+        <button class="iconbtn" data-act="tpl-edit" data-id="${t.id}">✎</button>
+        <button class="iconbtn" data-act="tpl-del" data-id="${t.id}">✕</button>
+      </div>`;
+    }).join("")
+  ).join("")+`<button class="btn btn-ghost" data-act="tpl-new" style="width:100%;margin-top:14px">+ Nuova voce personalizzata</button>`;
+  document.getElementById("tpl-overlay").classList.add("open");
+}
+function closeTpl(){document.getElementById("tpl-overlay").classList.remove("open");}
+function addTemplates(){
+  const checks=[...document.querySelectorAll(".tpl-check")];
+  const chosen=checks.filter(c=>c.checked&&!c.disabled)
+    .map(c=>S.templates.find(t=>t.id===c.dataset.tid)).filter(Boolean);
+  if(!chosen.length){closeTpl();return;}
+  if(chosen.some(t=>t.cat==="fisco")&&!S.categories.some(c=>c.id==="fisco")){
+    S.categories.push({id:"fisco",name:"Fisco & Contributi",color:"#6B7A8F"});
+  }
+  chosen.forEach(t=>{
+    S.expenses.unshift({
+      id:"e"+Date.now()+Math.random().toString(36).slice(2,6),
+      desc:t.desc,amount:t.amount>0?Number(t.amount):null,
+      variable:!!t.variable,history:[],
+      categoryId:t.cat,date:todayISO(),recurring:true,freq:t.freq,
+    });
+  });
+  S.notice=chosen.length+(chosen.length===1?" spesa aggiunta":" spese aggiunte")+". Apri ciascuna con ✎ per impostare la data della prima scadenza.";
+  closeTpl();persist();S.tab="spese";render();
+}
+/* --- template editor --- */
+let tpeId=null;
+function openTpe(id){
+  const t=id?S.templates.find(x=>x.id===id):null;
+  tpeId=id||null;
+  document.getElementById("tpe-title").textContent=t?"Modifica voce":"Nuova voce personalizzata";
+  document.getElementById("t-desc").value=t?t.desc:"";
+  document.getElementById("t-amount").value=t&&t.amount?t.amount:"";
+  const cat=t?t.cat:"altro",freq=t?t.freq:"mensile",isVar=t?!!t.variable:true;
+  document.getElementById("t-cats").innerHTML=S.categories.map(c=>
+    `<button class="chip ${cat===c.id?"active":""}" data-tcat="${c.id}">${esc(c.name)}</button>`).join("");
+  document.getElementById("t-freqs").innerHTML=FREQS.map(x=>
+    `<button class="chip ${freq===x.id?"active":""}" data-tfreq="${x.id}">${x.label}</button>`).join("");
+  document.getElementById("t-var").checked=isVar;
+  document.getElementById("t-var-toggle").classList.toggle("on",isVar);
+  document.getElementById("tpe-overlay").classList.add("open");
+}
+function closeTpe(){tpeId=null;document.getElementById("tpe-overlay").classList.remove("open");}
+function saveTpe(){
+  const desc=document.getElementById("t-desc").value.trim();
+  const amount=Number(document.getElementById("t-amount").value);
+  const isVar=document.getElementById("t-var").checked;
+  if(!desc)return;
+  if(!isVar&&(!amount||amount<=0))return;
+  const catBtn=document.querySelector("#t-cats .chip.active");
+  const freqBtn=document.querySelector("#t-freqs .chip.active");
+  const prev=tpeId?S.templates.find(x=>x.id===tpeId):null;
+  const rec={
+    id:tpeId||"t"+Date.now(),
+    group:prev?prev.group:"Personalizzate",
+    desc,cat:catBtn?catBtn.dataset.tcat:"altro",
+    freq:freqBtn?freqBtn.dataset.tfreq:"mensile",
+    variable:isVar,amount:amount>0?amount:null,
+  };
+  if(tpeId)S.templates=S.templates.map(x=>x.id===tpeId?rec:x);
+  else S.templates.push(rec);
+  closeTpe();persist();openTpl();
+}
+
+/* ================= BILL REGISTRATION ================= */
+let billId=null;
+function openBill(id){
+  const e=S.expenses.find(x=>x.id===id);if(!e)return;
+  billId=id;
+  document.getElementById("bill-name").textContent=e.desc+" — l'importo registrato sostituisce la stima per il mese della data scelta.";
+  document.getElementById("b-amount").value="";
+  document.getElementById("b-date").value=todayISO();
+  document.getElementById("bill-overlay").classList.add("open");
+}
+function closeBill(){billId=null;document.getElementById("bill-overlay").classList.remove("open");}
+function saveBill(){
+  const amount=Number(document.getElementById("b-amount").value);
+  const date=document.getElementById("b-date").value||todayISO();
+  if(!billId||!amount||amount<=0)return;
+  const d=new Date(date+"T00:00:00");
+  S.expenses=S.expenses.map(e=>{
+    if(e.id!==billId)return e;
+    const hist=(e.history||[]).filter(h=>{
+      const hd=new Date(h.date+"T00:00:00");
+      return !(hd.getFullYear()===d.getFullYear()&&hd.getMonth()===d.getMonth());
+    });
+    hist.push({date,amount});
+    return {...e,history:hist};
+  });
+  S.notice="Importo registrato.";
+  closeBill();persist();render();
+}
+
 /* ================= UPDATE ================= */
 async function forceUpdate(){
   try{
@@ -664,7 +904,7 @@ async function forceUpdate(){
 
 /* ================= EVENTS ================= */
 document.addEventListener("click",ev=>{
-  const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq]");
+  const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq],[data-tcat],[data-tfreq]");
   if(!t)return;
   if(t.dataset.fcat!==undefined){
     document.querySelectorAll("#f-cats .chip").forEach(x=>x.classList.remove("active"));
@@ -674,13 +914,21 @@ document.addEventListener("click",ev=>{
     document.querySelectorAll("#f-freqs .chip").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");return;
   }
+  if(t.dataset.tcat!==undefined){
+    document.querySelectorAll("#t-cats .chip").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");return;
+  }
+  if(t.dataset.tfreq!==undefined){
+    document.querySelectorAll("#t-freqs .chip").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");return;
+  }
   const act=t.dataset.act;
   if(act==="tab"){S.tab=t.dataset.id;S.selDay=null;render();}
   else if(act==="month"){const d=new Date(S.viewY,S.viewM+Number(t.dataset.d),1);S.viewY=d.getFullYear();S.viewM=d.getMonth();render();}
   else if(act==="cal-month"){const d=new Date(S.calY,S.calM+Number(t.dataset.d),1);S.calY=d.getFullYear();S.calM=d.getMonth();S.selDay=null;render();}
   else if(act==="cal-day"){S.selDay=Number(t.dataset.d);render();}
   else if(act==="filter"){S.filterCat=t.dataset.id;render();}
-  else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:String(e.amount),freq:e.freq||"mensile"});}}
+  else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:e.amount!=null?String(e.amount):"",freq:e.freq||"mensile"});}}
   else if(act==="del"){S.expenses=S.expenses.filter(x=>x.id!==t.dataset.id);persist();render();}
   else if(act==="addcat"){
     const inp=document.getElementById("newcat");const name=inp.value.trim();
@@ -694,6 +942,11 @@ document.addEventListener("click",ev=>{
   else if(act==="savekey"){S.apiKey=document.getElementById("apikey").value.trim();S.notice="Chiave API salvata.";persist();render();}
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
+  else if(act==="templates"){openTpl();}
+  else if(act==="tpl-edit"){openTpe(t.dataset.id);}
+  else if(act==="tpl-del"){S.templates=S.templates.filter(x=>x.id!==t.dataset.id);persist();openTpl();}
+  else if(act==="tpl-new"){openTpe(null);}
+  else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
   else if(act==="clear-notice"){S.notice="";render();}
   else if(act==="clear-error"){S.error="";render();}
@@ -712,7 +965,31 @@ document.getElementById("f-rec-toggle").addEventListener("click",()=>{
   const cb=document.getElementById("f-rec");cb.checked=!cb.checked;
   document.getElementById("f-rec-toggle").classList.toggle("on",cb.checked);
   document.getElementById("f-freq-wrap").style.display=cb.checked?"block":"none";
+  document.getElementById("f-var-wrap").style.display=cb.checked?"block":"none";
   document.getElementById("f-date-label").textContent=cb.checked?"Prima scadenza":"Data";
+});
+document.getElementById("f-var-toggle").addEventListener("click",()=>{
+  const cb=document.getElementById("f-var");cb.checked=!cb.checked;
+  document.getElementById("f-var-toggle").classList.toggle("on",cb.checked);
+});
+document.getElementById("tpl-cancel").addEventListener("click",closeTpl);
+document.getElementById("tpe-cancel").addEventListener("click",closeTpe);
+document.getElementById("tpe-save").addEventListener("click",saveTpe);
+document.getElementById("tpe-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="tpe-overlay")closeTpe();
+});
+document.getElementById("t-var-toggle").addEventListener("click",()=>{
+  const cb=document.getElementById("t-var");cb.checked=!cb.checked;
+  document.getElementById("t-var-toggle").classList.toggle("on",cb.checked);
+});
+document.getElementById("tpl-add").addEventListener("click",addTemplates);
+document.getElementById("tpl-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="tpl-overlay")closeTpl();
+});
+document.getElementById("bill-cancel").addEventListener("click",closeBill);
+document.getElementById("bill-save").addEventListener("click",saveBill);
+document.getElementById("bill-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="bill-overlay")closeBill();
 });
 document.addEventListener("change",ev=>{
   if(ev.target.id==="import-input"){
@@ -735,7 +1012,9 @@ function afterRender(){
     if(Array.isArray(data.expenses))S.expenses=data.expenses;
     if(Array.isArray(data.categories)&&data.categories.length)S.categories=data.categories;
     if(typeof data.apiKey==="string")S.apiKey=data.apiKey;
+    if(Array.isArray(data.templates)&&data.templates.length)S.templates=data.templates;
   }
+  if(!S.templates.length)S.templates=DEFAULT_TEMPLATES.map(t=>({...t}));
   render();
   if("serviceWorker" in navigator&&location.protocol==="https:"){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
