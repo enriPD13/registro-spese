@@ -111,7 +111,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v2.3 · <span id="env-label"></span></div>
+      <div class="sub">v2.4 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -473,6 +473,11 @@ function renderImpostazioni(){
     <input type="file" id="import-input" accept=".json" style="display:none">
   </div>
   <div class="card">
+    <span class="label">Aggiornamenti</span>
+    <div class="small" style="margin-bottom:10px">Versione installata: v2.4. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
+    <button class="btn btn-ink" data-act="update">Cerca aggiornamenti</button>
+  </div>
+  <div class="card">
     <span class="label">Usare l'app sull'iPhone</span>
     <div class="small">1. Apri questo file in Safari (es. inviandotelo via AirDrop, mail, o pubblicandolo su un piccolo hosting).<br>
     2. Tocca Condividi → "Aggiungi a Home": diventa un'app a schermo intero.<br>
@@ -642,6 +647,21 @@ function importBackup(file){
   r.readAsText(file);
 }
 
+/* ================= UPDATE ================= */
+async function forceUpdate(){
+  try{
+    if("caches" in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+    if("serviceWorker" in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+  }catch(e){}
+  location.reload();
+}
+
 /* ================= EVENTS ================= */
 document.addEventListener("click",ev=>{
   const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq]");
@@ -674,6 +694,7 @@ document.addEventListener("click",ev=>{
   else if(act==="savekey"){S.apiKey=document.getElementById("apikey").value.trim();S.notice="Chiave API salvata.";persist();render();}
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
+  else if(act==="update"){forceUpdate();}
   else if(act==="clear-notice"){S.notice="";render();}
   else if(act==="clear-error"){S.error="";render();}
 });
