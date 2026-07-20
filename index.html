@@ -112,7 +112,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v4.0 · <span id="env-label"></span></div>
+      <div class="sub">v4.1 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -169,6 +169,21 @@
     <div class="frow" style="margin-top:16px">
       <button class="btn btn-ghost" style="flex:1" id="tpl-cancel">Annulla</button>
       <button class="btn btn-orange" style="flex:2" id="tpl-add">Aggiungi selezionate</button>
+    </div>
+  </div>
+</div>
+
+<!-- category editor modal -->
+<div class="overlay" id="cat-overlay">
+  <div class="sheet">
+    <h2 class="serif" id="cat-title">Nuova categoria</h2>
+    <div class="mb"><label class="label">Nome</label>
+      <input class="input" id="c-name" placeholder="Es. Villa, Formazione, Viaggi…"></div>
+    <div class="mb"><label class="label">Colore etichetta</label>
+      <div class="chips" id="c-colors"></div></div>
+    <div class="frow" style="margin-top:8px">
+      <button class="btn btn-ghost" style="flex:1" id="cat-cancel">Annulla</button>
+      <button class="btn btn-orange" style="flex:2" id="cat-save">Salva categoria</button>
     </div>
   </div>
 </div>
@@ -231,6 +246,7 @@ const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
   {id:"trimestrale",label:"Trimestrale",months:3},
+  {id:"quadrimestrale",label:"Quadrimestrale",months:4},
   {id:"semestrale",label:"Semestrale",months:6},
   {id:"annuale",label:"Annuale",months:12},
 ];
@@ -243,6 +259,7 @@ const DEFAULT_CATS=[
   {id:"altro",name:"Altro",color:"#8B887C"},
 ];
 const CAT_COLORS=["#3E4A3A","#8A9B7E","#C4682F","#B0793A","#5C6E54","#8B887C","#A65D57","#6B7A8F"];
+const CAT_PALETTE=["#3E4A3A","#5C6E54","#8A9B7E","#6B7A8F","#4A6670","#C4682F","#B0793A","#A65D57","#8C5A8C","#7A6A4F","#8B887C","#4F6D4A"];
 const KEY="registro-spese-v2";
 const DEFAULT_TEMPLATES=[
   {id:"t-luce",group:"Casa & Utenze",desc:"Bolletta luce",cat:"utenze",freq:"bimestrale",variable:true},
@@ -653,9 +670,8 @@ function renderScadenze(){
 /* ---------- Categorie ---------- */
 function renderCategorie(){
   return `
-  <div class="card"><span class="label">Nuova categoria</span>
-    <div class="frow"><input class="input" id="newcat" placeholder="Es. Villa, Formazione, Viaggi…" style="flex:1">
-    <button class="btn btn-ink" data-act="addcat">Crea</button></div>
+  <div class="card">
+    <button class="btn btn-ink" data-act="cat-new" style="width:100%">+ Nuova categoria</button>
   </div>
   <div class="card">
     ${S.categories.map(c=>{
@@ -664,9 +680,10 @@ function renderCategorie(){
         <span style="width:14px;height:14px;border-radius:4px;background:${c.color};flex-shrink:0"></span>
         <div class="rdesc rtitle">${esc(c.name)}</div>
         <span class="small">${n} ${n===1?"spesa":"spese"}</span>
+        <button class="iconbtn" data-act="cat-edit" data-id="${c.id}">✎</button>
         ${c.id!=="altro"?`<button class="iconbtn" data-act="delcat" data-id="${c.id}">✕</button>`:""}
       </div>`;}).join("")}
-    <div class="small" style="padding-top:8px">Eliminando una categoria, le sue spese passano ad "Altro".</div>
+    <div class="small" style="padding-top:8px">Tocca ✎ per rinominare o cambiare colore. Eliminando una categoria, le sue spese passano ad "Altro".</div>
   </div>`;
 }
 
@@ -706,7 +723,7 @@ function renderImpostazioni(){
   </div>
   <div class="card">
     <span class="label">Aggiornamenti</span>
-    <div class="small" style="margin-bottom:10px">Versione installata: v4.0. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
+    <div class="small" style="margin-bottom:10px">Versione installata: v4.1. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
     <button class="btn btn-ink" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
@@ -888,6 +905,34 @@ function importBackup(file){
   r.readAsText(file);
 }
 
+/* ================= CATEGORY EDITOR ================= */
+let catEditId=null,catColorSel=null;
+function openCat(id){
+  const c=id?S.categories.find(x=>x.id===id):null;
+  catEditId=id||null;
+  catColorSel=c?c.color:CAT_PALETTE[S.categories.length%CAT_PALETTE.length];
+  document.getElementById("cat-title").textContent=c?"Modifica categoria":"Nuova categoria";
+  document.getElementById("c-name").value=c?c.name:"";
+  renderCatColors();
+  document.getElementById("cat-overlay").classList.add("open");
+}
+function renderCatColors(){
+  document.getElementById("c-colors").innerHTML=CAT_PALETTE.map(col=>
+    `<button data-ccolor="${col}" style="width:34px;height:34px;border-radius:8px;background:${col};cursor:pointer;
+      border:3px solid ${catColorSel===col?"var(--ink-dark)":"transparent"};outline:1px solid var(--line)"></button>`).join("");
+}
+function closeCat(){catEditId=null;document.getElementById("cat-overlay").classList.remove("open");}
+function saveCat(){
+  const name=document.getElementById("c-name").value.trim();
+  if(!name)return;
+  if(catEditId){
+    S.categories=S.categories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
+  }else{
+    S.categories.push({id:"c"+Date.now(),name,color:catColorSel});
+  }
+  closeCat();persist();render();
+}
+
 /* ================= TEMPLATES ================= */
 function openTpl(){
   const groups=[];
@@ -1038,6 +1083,9 @@ document.addEventListener("click",ev=>{
     document.querySelectorAll("#t-freqs .chip").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");return;
   }
+  if(t.dataset.ccolor!==undefined){
+    catColorSel=t.dataset.ccolor;renderCatColors();return;
+  }
   const act=t.dataset.act;
   if(act==="tab"){S.tab=t.dataset.id;S.selDay=null;render();}
   else if(act==="month"){const d=new Date(S.viewY,S.viewM+Number(t.dataset.d),1);S.viewY=d.getFullYear();S.viewM=d.getMonth();render();}
@@ -1046,10 +1094,8 @@ document.addEventListener("click",ev=>{
   else if(act==="filter"){S.filterCat=t.dataset.id;render();}
   else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:e.amount!=null?String(e.amount):"",freq:e.freq||"mensile"});}}
   else if(act==="del"){S.expenses=S.expenses.filter(x=>x.id!==t.dataset.id);persist();render();}
-  else if(act==="addcat"){
-    const inp=document.getElementById("newcat");const name=inp.value.trim();
-    if(name){S.categories.push({id:"c"+Date.now(),name,color:CAT_COLORS[S.categories.length%CAT_COLORS.length]});persist();render();}
-  }
+  else if(act==="cat-new"){openCat(null);}
+  else if(act==="cat-edit"){openCat(t.dataset.id);}
   else if(act==="delcat"){
     const id=t.dataset.id;
     S.expenses=S.expenses.map(e=>e.categoryId===id?{...e,categoryId:"altro"}:e);
@@ -1089,6 +1135,11 @@ document.getElementById("f-rec-toggle").addEventListener("click",()=>{
 document.getElementById("f-var-toggle").addEventListener("click",()=>{
   const cb=document.getElementById("f-var");cb.checked=!cb.checked;
   document.getElementById("f-var-toggle").classList.toggle("on",cb.checked);
+});
+document.getElementById("cat-cancel").addEventListener("click",closeCat);
+document.getElementById("cat-save").addEventListener("click",saveCat);
+document.getElementById("cat-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="cat-overlay")closeCat();
 });
 document.getElementById("tpl-cancel").addEventListener("click",closeTpl);
 document.getElementById("tpe-cancel").addEventListener("click",closeTpe);
