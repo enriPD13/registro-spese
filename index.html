@@ -112,7 +112,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v4.1 · <span id="env-label"></span></div>
+      <div class="sub">v4.2 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -259,7 +259,11 @@ const DEFAULT_CATS=[
   {id:"altro",name:"Altro",color:"#8B887C"},
 ];
 const CAT_COLORS=["#3E4A3A","#8A9B7E","#C4682F","#B0793A","#5C6E54","#8B887C","#A65D57","#6B7A8F"];
-const CAT_PALETTE=["#3E4A3A","#5C6E54","#8A9B7E","#6B7A8F","#4A6670","#C4682F","#B0793A","#A65D57","#8C5A8C","#7A6A4F","#8B887C","#4F6D4A"];
+const CAT_PALETTE=[
+  "#3E4A3A","#5C6E54","#6E8060","#8A9B7E","#4F6D4A","#6B8E5A",
+  "#2F5D50","#3E7C6A","#4A6670","#5A7D8C","#6B7A8F","#3D5A80",
+  "#C4682F","#B0793A","#D89B4A","#A65D57","#C0504D","#8C4A3F",
+  "#8C5A8C","#6D5B97","#A67C52","#7A6A4F","#8B887C","#5A5750"];
 const KEY="registro-spese-v2";
 const DEFAULT_TEMPLATES=[
   {id:"t-luce",group:"Casa & Utenze",desc:"Bolletta luce",cat:"utenze",freq:"bimestrale",variable:true},
@@ -723,7 +727,7 @@ function renderImpostazioni(){
   </div>
   <div class="card">
     <span class="label">Aggiornamenti</span>
-    <div class="small" style="margin-bottom:10px">Versione installata: v4.1. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
+    <div class="small" style="margin-bottom:10px">Versione installata: v4.2. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
     <button class="btn btn-ink" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
@@ -918,8 +922,9 @@ function openCat(id){
 }
 function renderCatColors(){
   document.getElementById("c-colors").innerHTML=CAT_PALETTE.map(col=>
-    `<button data-ccolor="${col}" style="width:34px;height:34px;border-radius:8px;background:${col};cursor:pointer;
-      border:3px solid ${catColorSel===col?"var(--ink-dark)":"transparent"};outline:1px solid var(--line)"></button>`).join("");
+    `<span class="swatch" data-ccolor="${col}" style="display:inline-block;width:34px;height:34px;border-radius:8px;
+      background:${col};cursor:pointer;box-sizing:border-box;
+      border:3px solid ${catColorSel===col?"var(--ink-dark)":"transparent"};box-shadow:0 0 0 1px var(--line)"></span>`).join("");
 }
 function closeCat(){catEditId=null;document.getElementById("cat-overlay").classList.remove("open");}
 function saveCat(){
@@ -1065,7 +1070,7 @@ async function forceUpdate(){
 
 /* ================= EVENTS ================= */
 document.addEventListener("click",ev=>{
-  const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq],[data-tcat],[data-tfreq]");
+  const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq],[data-tcat],[data-tfreq],[data-ccolor]");
   if(!t)return;
   if(t.dataset.fcat!==undefined){
     document.querySelectorAll("#f-cats .chip").forEach(x=>x.classList.remove("active"));
