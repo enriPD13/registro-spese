@@ -111,7 +111,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v2.1 · <span id="env-label"></span></div>
+      <div class="sub">v2.2 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -554,22 +554,28 @@ function scanPrompt(){
   '"freq":"mensile","bimestrale","trimestrale","semestrale","annuale" oppure null}\n'+
   "Se un dato non è leggibile, usa null. Non inventare valori.";
 }
+const GROQ_VISION_MODELS=["qwen/qwen3.6-27b","meta-llama/llama-4-maverick-17b-128e-instruct"];
 async function callGroq(b64){
-  const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":"Bearer "+S.apiKey},
-    body:JSON.stringify({
-      model:"meta-llama/llama-4-scout-17b-16e-instruct",
-      max_tokens:1000,temperature:0,
-      messages:[{role:"user",content:[
-        {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+b64}},
-        {type:"text",text:scanPrompt()}
-      ]}]
-    })
-  });
-  const data=await r.json();
-  if(!r.ok||data.error)throw new Error(data.error&&data.error.message?data.error.message:"Errore Groq "+r.status);
-  return data.choices[0].message.content;
+  let lastErr=null;
+  for(const model of GROQ_VISION_MODELS){
+    try{
+      const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+S.apiKey},
+        body:JSON.stringify({
+          model,max_tokens:1000,temperature:0,
+          messages:[{role:"user",content:[
+            {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+b64}},
+            {type:"text",text:scanPrompt()}
+          ]}]
+        })
+      });
+      const data=await r.json();
+      if(!r.ok||data.error)throw new Error(data.error&&data.error.message?data.error.message:"Errore Groq "+r.status);
+      return data.choices[0].message.content;
+    }catch(err){lastErr=err;}
+  }
+  throw lastErr||new Error("Nessun modello vision disponibile");
 }
 async function callClaude(b64){
   const r=await fetch("https://api.anthropic.com/v1/messages",{
