@@ -1,5 +1,5 @@
 /* Registro Spese — service worker: app shell in cache, API sempre in rete */
-const CACHE = "registro-spese-v3.2";
+const CACHE = "registro-spese-v4.0";
 const SHELL = [
   "./",
   "./index.html",
@@ -25,7 +25,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   /* Le chiamate alle API (Groq / Anthropic) vanno sempre in rete, mai in cache */
-  if (url.hostname.includes("groq.com") || url.hostname.includes("anthropic.com")) return;
+  if (url.hostname.includes("groq.com") || url.hostname.includes("anthropic.com") || url.hostname.includes("googleapis.com") || url.hostname.includes("accounts.google.com")) return;
   if (e.request.method !== "GET") return;
   e.respondWith(
     caches.match(e.request).then(

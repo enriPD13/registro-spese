@@ -10,6 +10,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#3E4A3A">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --paper:#F7F6F1; --card:#FFFFFF; --ink-dark:#26291F; --ink:#3E4A3A;
@@ -111,7 +112,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v3.2 · <span id="env-label"></span></div>
+      <div class="sub">v4.0 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -267,7 +268,7 @@ const S={
   tab:"riepilogo",viewY:now.getFullYear(),viewM:now.getMonth(),
   calY:now.getFullYear(),calM:now.getMonth(),selDay:null,
   filterCat:"all",editId:null,notice:"",error:"",
-  templates:[],
+  templates:[],gClientId:"",lastSync:0,savedAt:0,
 };
 let charts=[];
 
@@ -293,9 +294,114 @@ const store={
     return false;
   }
 };
-async function persist(){
-  const ok=await store.save({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,templates:S.templates});
+async function persistLocal(){
+  const ok=await store.save({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,
+    templates:S.templates,gClientId:S.gClientId,lastSync:S.lastSync,savedAt:S.savedAt});
   if(!ok&&store.mode!=="none"){S.error="Salvataggio non riuscito: i dati restano in memoria per questa sessione.";}
+}
+async function persist(){
+  S.savedAt=Date.now();
+  await persistLocal();
+  schedulePush();
+}
+
+/* ================= GOOGLE DRIVE SYNC ================= */
+let gTokenObj=null,gTC=null,pushTimer=null;
+function gTokenValid(){return gTokenObj&&gTokenObj.exp>Date.now();}
+function gEnsureClient(){
+  if(!S.gClientId)return null;
+  if(!(window.google&&google.accounts&&google.accounts.oauth2))return null;
+  if(!gTC){
+    gTC=google.accounts.oauth2.initTokenClient({
+      client_id:S.gClientId,
+      scope:"https://www.googleapis.com/auth/drive.appdata",
+      callback:(resp)=>{
+        if(resp&&resp.access_token){
+          gTokenObj={token:resp.access_token,exp:Date.now()+((resp.expires_in||3600)-60)*1000};
+          syncNow();
+        }else{S.error="Accesso Google non riuscito.";render();}
+      },
+    });
+  }
+  return gTC;
+}
+function gSync(){
+  const tc=gEnsureClient();
+  if(!tc){S.error=S.gClientId?"Libreria Google non ancora caricata: riprova tra qualche secondo.":"Inserisci e salva prima il Client ID.";render();return;}
+  if(gTokenValid()){syncNow();return;}
+  tc.requestAccessToken({prompt:""});
+}
+async function gFetch(url,opt){
+  opt=opt||{};
+  opt.headers=Object.assign({},opt.headers,{Authorization:"Bearer "+gTokenObj.token});
+  const r=await fetch(url,opt);
+  if(!r.ok)throw new Error("Google Drive "+r.status);
+  return r;
+}
+async function driveFind(){
+  const r=await gFetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)&q="+
+    encodeURIComponent("name='registro-spese.json'"));
+  const j=await r.json();
+  return (j.files&&j.files[0])||null;
+}
+function drivePayload(){
+  return JSON.stringify({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,
+    templates:S.templates,savedAt:S.savedAt||0});
+}
+async function drivePush(fileId){
+  const body=drivePayload();
+  if(fileId){
+    await gFetch("https://www.googleapis.com/upload/drive/v3/files/"+fileId+"?uploadType=media",
+      {method:"PATCH",headers:{"Content-Type":"application/json"},body});
+  }else{
+    const meta={name:"registro-spese.json",parents:["appDataFolder"]};
+    const bd="rsb"+Date.now();
+    const mp="--"+bd+"\r\nContent-Type: application/json\r\n\r\n"+JSON.stringify(meta)+
+      "\r\n--"+bd+"\r\nContent-Type: application/json\r\n\r\n"+body+"\r\n--"+bd+"--";
+    await gFetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+      {method:"POST",headers:{"Content-Type":"multipart/related; boundary="+bd},body:mp});
+  }
+}
+async function syncNow(){
+  try{
+    const f=await driveFind();
+    if(f){
+      const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+f.id+"?alt=media");
+      const remote=await r.json();
+      const rAt=Number(remote.savedAt||0),lAt=Number(S.savedAt||0);
+      if(rAt>lAt){
+        if(Array.isArray(remote.expenses))S.expenses=remote.expenses;
+        if(Array.isArray(remote.categories)&&remote.categories.length)S.categories=remote.categories;
+        if(Array.isArray(remote.templates)&&remote.templates.length)S.templates=remote.templates;
+        if(typeof remote.apiKey==="string"&&remote.apiKey&&!S.apiKey)S.apiKey=remote.apiKey;
+        S.savedAt=rAt;
+        S.notice="Dati aggiornati da Google Drive (versione più recente).";
+      }else{
+        await drivePush(f.id);
+        S.notice="Dati salvati su Google Drive.";
+      }
+    }else{
+      await drivePush(null);
+      S.notice="Primo backup creato su Google Drive.";
+    }
+    S.lastSync=Date.now();
+    await persistLocal();
+  }catch(err){
+    S.error="Sincronizzazione non riuscita ("+(err&&err.message?err.message:"errore")+").";
+  }
+  render();
+}
+function schedulePush(){
+  if(!gTokenValid())return;
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(async()=>{
+    try{
+      const f=await driveFind();
+      await drivePush(f&&f.id);
+      S.lastSync=Date.now();
+      await persistLocal();
+    }catch(e){}
+  },1500);
 }
 
 /* ================= UTILS ================= */
@@ -575,6 +681,16 @@ function renderImpostazioni(){
     <button class="btn btn-ink" data-act="savekey" style="margin-top:10px">Salva chiave</button>
   </div>
   <div class="card">
+    <span class="label">Account Google (sincronizzazione)</span>
+    <div class="small" style="margin-bottom:8px">I dati vengono salvati in uno spazio privato del tuo Google Drive, invisibile tra i tuoi file: mai più persi, e sincronizzati tra iPhone e PC. Serve un Client ID OAuth (te lo crei una volta sola su Google Cloud Console).</div>
+    <input class="input" id="gclientid" placeholder="Client ID (…apps.googleusercontent.com)" value="${esc(S.gClientId)}">
+    <div class="frow" style="margin-top:10px">
+      <button class="btn btn-ink" data-act="g-save" style="flex:1">Salva ID</button>
+      <button class="btn btn-orange" data-act="g-sync" style="flex:1" ${S.gClientId?"":"disabled"}>Accedi e sincronizza</button>
+    </div>
+    <div class="small" style="margin-top:8px">${S.lastSync?"Ultima sincronizzazione: "+new Date(S.lastSync).toLocaleString("it-IT"):"Mai sincronizzato."} Dopo l'accesso, ogni modifica viene salvata su Drive automaticamente.</div>
+  </div>
+  <div class="card">
     <span class="label">Backup dei dati</span>
     <div class="small" style="margin-bottom:10px">${envTxt}. Esporta un file di backup per portare i dati su un altro dispositivo o conservarli al sicuro.</div>
     <div class="frow">
@@ -590,7 +706,7 @@ function renderImpostazioni(){
   </div>
   <div class="card">
     <span class="label">Aggiornamenti</span>
-    <div class="small" style="margin-bottom:10px">Versione installata: v3.2. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
+    <div class="small" style="margin-bottom:10px">Versione installata: v4.0. Se sul repository c'è una versione più recente, questo pulsante svuota la cache e ricarica l'app. Dati e chiave API non vengono toccati.</div>
     <button class="btn btn-ink" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
@@ -940,6 +1056,8 @@ document.addEventListener("click",ev=>{
     S.categories=S.categories.filter(c=>c.id!==id);persist();render();
   }
   else if(act==="savekey"){S.apiKey=document.getElementById("apikey").value.trim();S.notice="Chiave API salvata.";persist();render();}
+  else if(act==="g-save"){S.gClientId=document.getElementById("gclientid").value.trim();gTC=null;S.notice="Client ID salvato. Ora premi \"Accedi e sincronizza\".";persistLocal();render();}
+  else if(act==="g-sync"){gSync();}
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
   else if(act==="templates"){openTpl();}
@@ -1013,6 +1131,9 @@ function afterRender(){
     if(Array.isArray(data.categories)&&data.categories.length)S.categories=data.categories;
     if(typeof data.apiKey==="string")S.apiKey=data.apiKey;
     if(Array.isArray(data.templates)&&data.templates.length)S.templates=data.templates;
+    if(typeof data.gClientId==="string")S.gClientId=data.gClientId;
+    if(data.lastSync)S.lastSync=data.lastSync;
+    if(data.savedAt)S.savedAt=data.savedAt;
   }
   if(!S.templates.length)S.templates=DEFAULT_TEMPLATES.map(t=>({...t}));
   render();
