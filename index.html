@@ -111,7 +111,7 @@
   <div class="hwrap">
     <div>
       <h1 class="serif">Registro Spese</h1>
-      <div class="sub">v2.2 · <span id="env-label"></span></div>
+      <div class="sub">v2.3 · <span id="env-label"></span></div>
     </div>
     <div class="hbtns">
       <input type="file" id="scan-input" accept="image/*" style="display:none">
@@ -563,7 +563,8 @@ async function callGroq(b64){
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+S.apiKey},
         body:JSON.stringify({
-          model,max_tokens:1000,temperature:0,
+          model,max_completion_tokens:2048,temperature:0,
+          response_format:{type:"json_object"},
           messages:[{role:"user",content:[
             {type:"image_url",image_url:{url:"data:image/jpeg;base64,"+b64}},
             {type:"text",text:scanPrompt()}
@@ -594,7 +595,8 @@ async function scan(file){
   S.error="";document.getElementById("spin").classList.add("open");
   try{
     const b64=await normalizeImage(file);
-    const text=S.apiKey?await callGroq(b64):await callClaude(b64);
+    let text=S.apiKey?await callGroq(b64):await callClaude(b64);
+    text=String(text||"").replace(/<think>[\s\S]*?<\/think>/g,"");
     const a=text.indexOf("{"),b=text.lastIndexOf("}");
     if(a===-1||b===-1)throw new Error("Risposta senza JSON");
     const p=JSON.parse(text.slice(a,b+1));
