@@ -35,7 +35,8 @@
       --shadow:0 8px 28px rgba(0,0,0,.35);
     }
   }
-  html{overscroll-behavior:none}
+  html{overscroll-behavior:none;scrollbar-width:none;-ms-overflow-style:none}
+  html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{width:0;height:0;display:none}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;
     -webkit-touch-callout:none}
   body{margin:0;background:var(--canvas);color:var(--ink);
@@ -501,7 +502,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="7.4";
+const APP_V="7.5";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
