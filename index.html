@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.1";
+const APP_V="6.3";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -695,12 +695,13 @@ function schedulePush(){
 
 /* ================= DRIVE: INVOICE FILE ================= */
 const INVOICE_NAME="Riepilogo_2026.xlsx";
+const INVOICE_RE=/^Riepilogo_(\d{4})\.xlsx$/i;
 const MESE_IDX={GENNAIO:0,FEBBRAIO:1,MARZO:2,APRILE:3,MAGGIO:4,GIUGNO:5,LUGLIO:6,AGOSTO:7,SETTEMBRE:8,OTTOBRE:9,NOVEMBRE:10,DICEMBRE:11};
-async function driveFindInvoice(){
-  const q="name='"+INVOICE_NAME+"' and mimeType!='application/vnd.google-apps.folder' and trashed=false";
+async function driveFindInvoices(){
+  const q="name contains 'Riepilogo_' and mimeType!='application/vnd.google-apps.folder' and trashed=false";
   const r=await gFetch("https://www.googleapis.com/drive/v3/files?fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&q="+encodeURIComponent(q));
   const j=await r.json();
-  return (j.files&&j.files[0])||null;
+  return (j.files||[]).filter(f=>INVOICE_RE.test(f.name));
 }
 function isoFrom(v){
   if(v instanceof Date&&!isNaN(v))return v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2,"0")+"-"+String(v.getDate()).padStart(2,"0");
@@ -708,7 +709,7 @@ function isoFrom(v){
   if(typeof v==="number"&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*86400000));return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
   return null;
 }
-function parseInvoiceWorkbook(buf){
+function parseInvoiceWorkbook(buf,fileYear){
   const wb=XLSX.read(buf,{type:"array",cellDates:true});
   const ws=wb.Sheets["Foglio1"]||wb.Sheets[wb.SheetNames[0]];
   const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
@@ -716,41 +717,51 @@ function parseInvoiceWorkbook(buf){
   const head=rows[0].map(c=>String(c||"").trim().toUpperCase());
   const col=n=>head.findIndex(h=>h===n);
   const ci={num:col("NUMERO"),ente:col("ENTE"),mese:col("MESE"),imp:col("IMPORTO"),df:col("DATA FATTURA"),dp:col("DATA PAGAMENTO")};
+  const yr=fileYear||2026;
   const out=[];
   for(let r=1;r<rows.length;r++){
     const row=rows[r];if(!row)continue;
     const amount=Number(row[ci.imp]);
     if(!amount||amount<=0)continue;
     let iso=ci.df>-1?isoFrom(row[ci.df]):null;
-    if(!iso&&ci.mese>-1){const mi=MESE_IDX[String(row[ci.mese]||"").trim().toUpperCase()];if(mi!=null)iso="2026-"+String(mi+1).padStart(2,"0")+"-01";}
+    if(!iso&&ci.mese>-1){const mi=MESE_IDX[String(row[ci.mese]||"").trim().toUpperCase()];if(mi!=null)iso=yr+"-"+String(mi+1).padStart(2,"0")+"-01";}
     if(!iso)continue;
     const ente=ci.ente>-1&&row[ci.ente]!=null?String(row[ci.ente]).trim():"Fattura";
     const num=ci.num>-1?row[ci.num]:null;
-    out.push({num,desc:ente,amount,date:iso,paid:ci.dp>-1?isoFrom(row[ci.dp]):null});
+    out.push({num,year:yr,desc:ente,amount,date:iso,paid:ci.dp>-1?isoFrom(row[ci.dp]):null});
   }
   return out;
 }
 async function syncInvoices(silent){
   if(!gTokenValid()){if(!silent){S.error="Accedi prima a Google (Sincronizza) per leggere le fatture.";render();}return;}
   try{
-    const f=await driveFindInvoice();
-    if(!f){if(!silent){S.error="Non trovo \""+INVOICE_NAME+"\" nel tuo Drive.";render();}return;}
-    const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+f.id+"?alt=media");
-    const buf=await r.arrayBuffer();
-    const items=parseInvoiceWorkbook(buf);
-    // key by invoice number when present, else date+amount+ente
-    const keyOf=i=>i.num!=null?"n:"+i.num:(i.date+"|"+i.amount+"|"+i.desc.toLowerCase());
-    const have=new Set(S.incomes.map(i=>i.source==="excel"?(i.invNum!=null?"n:"+i.invNum:(i.date+"|"+i.amount+"|"+i.desc.toLowerCase())):null));
-    let added=0;
-    items.forEach(i=>{
-      if(have.has(keyOf(i)))return;
-      S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),
-        desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,paidDate:i.paid,categoryId:"ic-fatture"});
-      added++;
-    });
+    const files=await driveFindInvoices();
+    if(!files.length){if(!silent){S.error="Non trovo nessun file \"Riepilogo_20XX.xlsx\" nel tuo Drive.";render();}return;}
+    const keyOf=i=>(i.year!=null&&i.num!=null)?("y:"+i.year+":"+i.num):(i.date+"|"+i.amount+"|"+i.desc.toLowerCase());
+    const have=new Set(S.incomes.map(i=>{
+      if(i.source!=="excel")return null;
+      if(i.invYear!=null&&i.invNum!=null)return "y:"+i.invYear+":"+i.invNum;
+      return i.date+"|"+i.amount+"|"+i.desc.toLowerCase();
+    }));
+    let added=0,total=0;
+    for(const f of files){
+      const yr=Number((f.name.match(INVOICE_RE)||[])[1])||2026;
+      const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+f.id+"?alt=media");
+      const buf=await r.arrayBuffer();
+      const items=parseInvoiceWorkbook(buf,yr);
+      total+=items.length;
+      items.forEach(i=>{
+        const k=keyOf(i);
+        if(have.has(k))return;
+        have.add(k);
+        S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),
+          desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,invYear:i.year,paidDate:i.paid,categoryId:"ic-fatture"});
+        added++;
+      });
+    }
     S.lastInvoiceSync=Date.now();
-    if(added>0){S.notice=added+(added===1?" entrata importata":" entrate importate")+" da "+INVOICE_NAME+".";persist();}
-    else{if(!silent)S.notice="Entrate già aggiornate ("+items.length+" fatture nel file).";await persistLocal();}
+    if(added>0){S.notice=added+(added===1?" entrata importata":" entrate importate")+" da "+files.length+(files.length===1?" file":" file")+".";persist();}
+    else{if(!silent)S.notice="Entrate già aggiornate ("+total+" fatture in "+files.length+(files.length===1?" file":" file")+").";await persistLocal();}
     render();
   }catch(err){
     if(!silent){S.error="Lettura fatture non riuscita ("+(err&&err.message?err.message:"errore")+").";render();}
@@ -931,8 +942,11 @@ function renderRiepilogo(){
   <div class="card"><span class="label">Entrate vs uscite — 6 mesi</span>
     <canvas id="chart-inout" height="185"></canvas>
   </div>
-  <div class="card"><span class="label">Confronto con l'anno scorso</span>
+  <div class="card"><span class="label">Uscite vs anno scorso</span>
     <canvas id="chart-yoy" height="185"></canvas>
+  </div>
+  <div class="card"><span class="label">Entrate vs anno scorso</span>
+    <canvas id="chart-yoy-in" height="185"></canvas>
   </div>`;
 }
 function drawCharts(){
@@ -971,6 +985,25 @@ function drawCharts(){
       data:{labels,datasets:[
         {label:"Entrate",data:ins,backgroundColor:cssv("--accent"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
         {label:"Uscite",data:outs,backgroundColor:"#D9836B",borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+      ]},
+      options:{responsive:true,
+        plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
+          tooltip:{callbacks:{label:ctx=>" "+ctx.dataset.label+": "+eur(ctx.raw)}}},
+        scales:{y:{ticks:{callback:v=>eurShort(v),color:cssv("--muted"),font:{family:"Inter",size:10.5}},grid:{color:cssv("--line")},border:{display:false}},
+          x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:11,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
+  }
+  const insPrev=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date(S.viewY,S.viewM-i,1);
+    const yy=d.getFullYear(),mm=d.getMonth();
+    insPrev.push(monthIncomes(yy-1,mm).reduce((s,x)=>s+Number(x.amount),0));
+  }
+  const yInEl=document.getElementById("chart-yoy-in");
+  if(yInEl){
+    charts.push(new Chart(yInEl,{type:"bar",
+      data:{labels,datasets:[
+        {label:"Quest'anno",data:ins,backgroundColor:cssv("--accent"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Anno scorso",data:insPrev,backgroundColor:cssv("--line"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
       ]},
       options:{responsive:true,
         plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
@@ -1173,7 +1206,7 @@ function renderEntrate(){
     <input type="file" id="xls-input" accept=".xlsx,.xls,.csv" style="display:none">
     <div class="small" style="margin-top:10px">${lastInv}</div>
   </div>
-  <div class="card"><span class="label">Guadagno per mese</span>
+  <div class="card"><span class="label">Entrate per mese</span>
     <canvas id="chart-inc-month" height="185"></canvas></div>
   <div class="card"><span class="label">Andamento cumulato ${Y}</span>
     <canvas id="chart-inc-cum" height="175"></canvas></div>
