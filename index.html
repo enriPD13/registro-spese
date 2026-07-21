@@ -24,6 +24,7 @@
     --danger:#D9534A; --warn-bg:#FDF1EC;
     --hero-a:#0FA36B; --hero-b:#0B5E4A;
     --shadow:0 8px 28px rgba(22,24,29,.08);
+    --bar-prev:#FFFFFF;
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -33,6 +34,7 @@
       --danger:#E06A61; --warn-bg:#2A1F1C;
       --hero-a:#0E8F60; --hero-b:#0A4A3B;
       --shadow:0 8px 28px rgba(0,0,0,.35);
+      --bar-prev:#E9ECEF;
     }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -495,7 +497,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="7.2";
+const APP_V="7.3";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1026,7 +1028,7 @@ function drawCharts(){
     charts.push(new Chart(yInEl,{type:"bar",
       data:{labels,datasets:[
         {label:"Quest'anno",data:ins,backgroundColor:cssv("--accent"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
-        {label:"Anno scorso",data:insPrev,backgroundColor:cssv("--line"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Anno scorso",data:insPrev,backgroundColor:cssv("--bar-prev"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
       ]},
       options:{responsive:true,
         plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
@@ -1038,8 +1040,8 @@ function drawCharts(){
   if(yEl){
     charts.push(new Chart(yEl,{type:"bar",
       data:{labels,datasets:[
-        {label:"Quest'anno",data:cur,backgroundColor:cssv("--accent"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
-        {label:"Anno scorso",data:prev,backgroundColor:cssv("--line"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Quest'anno",data:cur,backgroundColor:"#D9836B",borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Anno scorso",data:prev,backgroundColor:cssv("--bar-prev"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
       ]},
       options:{responsive:true,
         plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
