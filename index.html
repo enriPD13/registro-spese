@@ -223,7 +223,8 @@
   <div class="sheet">
     <div class="grab"></div>
     <div class="menu-row" data-act="go" data-id="entrate"><span class="menu-ic" data-ic="euro"></span><div style="flex:1">Entrate<div class="small">Guadagni, import da Excel fatture</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
-    <div class="menu-row" data-act="go" data-id="categorie"><span class="menu-ic" data-ic="tag"></span><div style="flex:1">Categorie<div class="small">Nomi, colori, nuove etichette</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
+    <div class="menu-row" data-act="go" data-id="categorie"><span class="menu-ic" data-ic="tag"></span><div style="flex:1">Categorie spese<div class="small">Nomi, colori, nuove etichette</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
+    <div class="menu-row" data-act="go" data-id="cat-entrate"><span class="menu-ic" data-ic="euro"></span><div style="flex:1">Categorie entrate<div class="small">Etichette per i guadagni</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
     <div class="menu-row" data-act="go" data-id="impostazioni"><span class="menu-ic" data-ic="sliders"></span><div style="flex:1">Impostazioni<div class="small">Scansione IA, Google, backup, aggiornamenti</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
   </div>
 </div>
@@ -359,6 +360,8 @@
     </div>
     <div class="mb" id="i-freq-wrap" style="display:none"><label class="label">Frequenza</label>
       <div class="chips" id="i-freqs"></div></div>
+    <div class="mb"><label class="label">Categoria</label>
+      <div class="chips" id="i-cats"></div></div>
     <div class="frow" style="margin-top:8px">
       <button class="btn btn-ghost" style="flex:1" id="inc-cancel">Annulla</button>
       <button class="btn btn-primary" style="flex:2" id="inc-save">Salva entrata</button>
@@ -419,7 +422,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="5.5";
+const APP_V="5.6";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -443,6 +446,12 @@ const CAT_PALETTE=[
   "#C4682F","#B0793A","#D89B4A","#A65D57","#C0504D","#8C4A3F",
   "#8C5A8C","#6D5B97","#A67C52","#7A6A4F","#8B887C","#5A5750"];
 const KEY="registro-spese-v2";
+const DEFAULT_INC_CATS=[
+  {id:"ic-fatture",name:"Fatture",color:"#0FA36B"},
+  {id:"ic-formazione",name:"Formazione",color:"#5A7D8C"},
+  {id:"ic-consulenze",name:"Consulenze",color:"#B0793A"},
+  {id:"ic-altro",name:"Altro",color:"#8B887C"},
+];
 const DEFAULT_TEMPLATES=[
   {id:"t-luce",group:"Casa & Utenze",desc:"Bolletta luce",cat:"utenze",freq:"bimestrale",variable:true},
   {id:"t-gas",group:"Casa & Utenze",desc:"Bolletta gas",cat:"utenze",freq:"bimestrale",variable:true},
@@ -468,7 +477,7 @@ const S={
   calY:now.getFullYear(),calM:now.getMonth(),selDay:null,
   filterCat:"all",calFilter:"all",editId:null,notice:"",error:"",
   templates:[],gClientId:"",lastSync:0,savedAt:0,
-  incomes:[],lastInvoiceSync:0,
+  incomes:[],lastInvoiceSync:0,incCategories:DEFAULT_INC_CATS.slice(),
 };
 let charts=[];
 
@@ -496,7 +505,7 @@ const store={
 };
 async function persistLocal(){
   const ok=await store.save({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,
-    templates:S.templates,gClientId:S.gClientId,lastSync:S.lastSync,savedAt:S.savedAt,incomes:S.incomes,lastInvoiceSync:S.lastInvoiceSync});
+    templates:S.templates,gClientId:S.gClientId,lastSync:S.lastSync,savedAt:S.savedAt,incomes:S.incomes,lastInvoiceSync:S.lastInvoiceSync,incCategories:S.incCategories});
   if(!ok&&store.mode!=="none"){S.error="Salvataggio non riuscito: i dati restano in memoria per questa sessione.";}
 }
 async function persist(){
@@ -546,7 +555,7 @@ async function driveFind(){
 }
 function drivePayload(){
   return JSON.stringify({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,
-    templates:S.templates,incomes:S.incomes,savedAt:S.savedAt||0});
+    templates:S.templates,incomes:S.incomes,incCategories:S.incCategories,savedAt:S.savedAt||0});
 }
 async function drivePush(fileId){
   const body=drivePayload();
@@ -575,6 +584,7 @@ async function syncNow(){
         if(Array.isArray(remote.templates)&&remote.templates.length)S.templates=remote.templates;
         if(typeof remote.apiKey==="string"&&remote.apiKey&&!S.apiKey)S.apiKey=remote.apiKey;
         if(Array.isArray(remote.incomes))S.incomes=remote.incomes;
+        if(Array.isArray(remote.incCategories)&&remote.incCategories.length)S.incCategories=remote.incCategories;
         S.savedAt=rAt;
         S.notice="Dati aggiornati da Google Drive (versione più recente).";
       }else{
@@ -676,6 +686,7 @@ const eurShort=n=>n>=1000?(n/1000).toFixed(1).replace(".",",")+"k":Math.round(n)
 const todayISO=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const catById=id=>S.categories.find(c=>c.id===id)||{name:"—",color:"#8B887C",id:"?"};
+const incCatById=id=>S.incCategories.find(c=>c.id===id)||{name:"—",color:"#0FA36B",id:"?"};
 function monthsDiff(a,b){return (b.getFullYear()-a.getFullYear())*12+(b.getMonth()-a.getMonth());}
 function dueInMonth(e,y,m){
   const st=new Date(e.date+"T00:00:00");
@@ -768,7 +779,7 @@ function render(){
   renderTabs();
   const fn={riepilogo:renderRiepilogo,calendario:renderCalendario,spese:renderSpese,
     scadenze:renderScadenze,categorie:renderCategorie,impostazioni:renderImpostazioni,
-    entrate:renderEntrate}[S.tab];
+    entrate:renderEntrate,"cat-entrate":renderCatEntrate}[S.tab];
   document.getElementById("main").innerHTML='<div class="view">'+banners()+fn()+'</div>';
   afterRender();
 }
@@ -781,7 +792,7 @@ function banners(){
 }
 function renderTabs(){
   const urgent=S.expenses.filter(e=>e.recurring&&daysTo(nextDue(e))<=7).length;
-  const inAltro=S.tab==="categorie"||S.tab==="impostazioni"||S.tab==="entrate";
+  const inAltro=S.tab==="categorie"||S.tab==="impostazioni"||S.tab==="entrate"||S.tab==="cat-entrate";
   const tabs=[
     ["riepilogo","Riepilogo","pie"],
     ["calendario","Calendario","cal"],
@@ -1035,8 +1046,9 @@ function renderScadenze(){
 /* ---------- Entrate ---------- */
 function incomeRow(i){
   const f=FREQS.find(x=>x.id===i.freq);
+  const dotc=i.source==="excel"?"var(--accent)":(i.categoryId?incCatById(i.categoryId).color:"var(--accent)");
   return '<div class="row">'+
-    '<span class="dot" style="background:var(--accent)"></span>'+
+    '<span class="dot" style="background:'+dotc+'"></span>'+
     '<div class="rdesc"><div class="rtitle">'+esc(i.desc)+
       (i.recurring?'<span class="rtag tag-rec">'+(f?f.label:"Ricorrente")+'</span>':"")+
       (i.source==="excel"?'<span class="rtag tag-var">Excel</span>':"")+'</div>'+
@@ -1147,6 +1159,9 @@ function openInc(id){
   document.getElementById("i-date-label").textContent=rec?"Prima data":"Data";
   document.getElementById("i-freqs").innerHTML=FREQS.map(x=>
     '<button class="chip '+(freq===x.id?"active":"")+'" data-ifreq="'+x.id+'">'+x.label+'</button>').join("");
+  const icat=i&&i.categoryId?i.categoryId:(S.incCategories[0]&&S.incCategories[0].id);
+  document.getElementById("i-cats").innerHTML=S.incCategories.map(c=>
+    '<button class="chip '+(icat===c.id?"active":"")+'" data-icat="'+c.id+'">'+esc(c.name)+'</button>').join("");
   document.getElementById("inc-overlay").classList.add("open");
 }
 function closeInc(){incEditId=null;document.getElementById("inc-overlay").classList.remove("open");}
@@ -1157,9 +1172,11 @@ function saveInc(){
   const rec=document.getElementById("i-rec").checked;
   const freqBtn=document.querySelector("#i-freqs .chip.active");
   const freq=rec?(freqBtn?freqBtn.dataset.ifreq:"mensile"):null;
+  const catBtn=document.querySelector("#i-cats .chip.active");
+  const categoryId=catBtn?catBtn.dataset.icat:(S.incCategories[0]&&S.incCategories[0].id);
   if(!desc||!amount||amount<=0)return;
-  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date,recurring:rec,freq}:x);
-  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual",recurring:rec,freq});
+  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date,recurring:rec,freq,categoryId}:x);
+  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual",recurring:rec,freq,categoryId});
   closeInc();persist();render();
 }
 /* --- excel import --- */
@@ -1275,6 +1292,26 @@ function renderCategorie(){
   </div>`;
 }
 
+/* ---------- Categorie entrate ---------- */
+function renderCatEntrate(){
+  return `
+  <div class="card" style="padding:14px">
+    <button class="btn btn-primary" data-act="icat-new" style="width:100%">+ Nuova categoria entrata</button>
+  </div>
+  <div class="card">
+    ${S.incCategories.map(c=>{
+      const n=S.incomes.filter(i=>i.categoryId===c.id).length;
+      return '<div class="row">'+
+        '<span style="width:15px;height:15px;border-radius:5px;background:'+c.color+';flex-shrink:0"></span>'+
+        '<div class="rdesc rtitle">'+esc(c.name)+'</div>'+
+        '<span class="small">'+n+' '+(n===1?"entrata":"entrate")+'</span>'+
+        '<button class="iconbtn" data-act="icat-edit" data-id="'+c.id+'">'+icon("pencil",18)+'</button>'+
+        (c.id!=="ic-altro"?'<button class="iconbtn" data-act="icat-del" data-id="'+c.id+'">'+icon("x",18)+'</button>':"")+
+      '</div>';}).join("")}
+    <div class="small" style="padding-top:10px">Le fatture importate restano categorizzate automaticamente per ente. Eliminando una categoria, le entrate collegate passano ad "Altro".</div>
+  </div>`;
+}
+
 /* ---------- Impostazioni ---------- */
 function renderImpostazioni(){
   const envTxt={claude:"artifact Claude",local:"salvataggio locale attivo",none:"solo sessione"}[store.mode];
@@ -1369,12 +1406,14 @@ function saveForm(){
 }
 
 /* ================= CATEGORY EDITOR ================= */
-let catEditId=null,catColorSel=null;
-function openCat(id){
-  const c=id?S.categories.find(x=>x.id===id):null;
+let catEditId=null,catColorSel=null,catMode="exp";
+function openCat(id,mode){
+  catMode=mode||"exp";
+  const arr=catMode==="inc"?S.incCategories:S.categories;
+  const c=id?arr.find(x=>x.id===id):null;
   catEditId=id||null;
-  catColorSel=c?c.color:CAT_PALETTE[S.categories.length%CAT_PALETTE.length];
-  document.getElementById("cat-title").textContent=c?"Modifica categoria":"Nuova categoria";
+  catColorSel=c?c.color:CAT_PALETTE[arr.length%CAT_PALETTE.length];
+  document.getElementById("cat-title").textContent=c?"Modifica categoria":(catMode==="inc"?"Nuova categoria entrata":"Nuova categoria");
   document.getElementById("c-name").value=c?c.name:"";
   renderCatColors();
   document.getElementById("cat-overlay").classList.add("open");
@@ -1389,10 +1428,12 @@ function closeCat(){catEditId=null;document.getElementById("cat-overlay").classL
 function saveCat(){
   const name=document.getElementById("c-name").value.trim();
   if(!name)return;
-  if(catEditId){
-    S.categories=S.categories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
+  if(catMode==="inc"){
+    if(catEditId)S.incCategories=S.incCategories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
+    else S.incCategories.push({id:"ic"+Date.now(),name,color:catColorSel});
   }else{
-    S.categories.push({id:"c"+Date.now(),name,color:catColorSel});
+    if(catEditId)S.categories=S.categories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
+    else S.categories.push({id:"c"+Date.now(),name,color:catColorSel});
   }
   closeCat();persist();render();
 }
@@ -1670,6 +1711,10 @@ document.addEventListener("click",ev=>{
     document.querySelectorAll("#i-freqs .chip").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");return;
   }
+  if(t.dataset.icat!==undefined){
+    document.querySelectorAll("#i-cats .chip").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");return;
+  }
   if(t.dataset.tcat!==undefined){
     document.querySelectorAll("#t-cats .chip").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");return;
@@ -1698,8 +1743,15 @@ document.addEventListener("click",ev=>{
   else if(act==="filter"){S.filterCat=t.dataset.id;render();}
   else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:e.amount!=null?String(e.amount):"",freq:e.freq||"mensile"});}}
   else if(act==="del"){S.expenses=S.expenses.filter(x=>x.id!==t.dataset.id);persist();render();}
-  else if(act==="cat-new"){openCat(null);}
-  else if(act==="cat-edit"){openCat(t.dataset.id);}
+  else if(act==="cat-new"){openCat(null,"exp");}
+  else if(act==="cat-edit"){openCat(t.dataset.id,"exp");}
+  else if(act==="icat-new"){openCat(null,"inc");}
+  else if(act==="icat-edit"){openCat(t.dataset.id,"inc");}
+  else if(act==="icat-del"){
+    const id=t.dataset.id;
+    S.incomes=S.incomes.map(i=>i.categoryId===id?{...i,categoryId:"ic-altro"}:i);
+    S.incCategories=S.incCategories.filter(c=>c.id!==id);persist();render();
+  }
   else if(act==="delcat"){
     const id=t.dataset.id;
     S.expenses=S.expenses.map(e=>e.categoryId===id?{...e,categoryId:"altro"}:e);
@@ -1819,6 +1871,7 @@ function afterRender(){
     if(data.savedAt)S.savedAt=data.savedAt;
     if(Array.isArray(data.incomes))S.incomes=data.incomes;
     if(data.lastInvoiceSync)S.lastInvoiceSync=data.lastInvoiceSync;
+    if(Array.isArray(data.incCategories)&&data.incCategories.length)S.incCategories=data.incCategories;
   }
   if(!S.templates.length)S.templates=DEFAULT_TEMPLATES.map(t=>({...t}));
   render();
