@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.0";
+const APP_V="6.1";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1177,7 +1177,7 @@ function renderEntrate(){
     <canvas id="chart-inc-month" height="185"></canvas></div>
   <div class="card"><span class="label">Andamento cumulato ${Y}</span>
     <canvas id="chart-inc-cum" height="175"></canvas></div>
-  <div class="card"><span class="label">Guadagno per ente</span>
+  <div class="card"><span class="label">Voci di entrata</span>
     <div class="donut-wrap"><canvas id="chart-inc-ente" width="190" height="190"></canvas>
       <div class="donut-center"><div class="n">${eurShort(totYear)}</div><div class="l">${Y}</div></div></div>
     <div class="legend" id="inc-ente-legend"></div></div>
@@ -1212,9 +1212,13 @@ function drawIncomeCharts(){
     options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>" "+eur(c.raw)}}},
       scales:{y:{ticks:{callback:v=>eurShort(v),color:cssv("--muted"),font:{family:"Inter",size:10}},grid:{color:cssv("--line")},border:{display:false}},
         x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:10,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
-  const byEnte={};
-  S.incomes.forEach(i=>{const d=new Date(i.date+"T00:00:00");if(d.getFullYear()===Y)byEnte[i.desc]=(byEnte[i.desc]||0)+Number(i.amount);});
-  const ents=Object.entries(byEnte).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+  const byVoce={};
+  S.incomes.forEach(i=>{
+    const d=new Date(i.date+"T00:00:00");if(d.getFullYear()!==Y)return;
+    const key=i.source==="excel"?i.desc:(i.categoryId?incCatById(i.categoryId).name:"Altro");
+    byVoce[key]=(byVoce[key]||0)+Number(i.amount);
+  });
+  const ents=Object.entries(byVoce).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
   const pal=["#0FA36B","#0B5E4A","#5A7D8C","#C4682F","#B0793A","#6D5B97","#8B887C","#3E7C6A","#A65D57"];
   const eEl=document.getElementById("chart-inc-ente");
   if(eEl&&ents.length){
