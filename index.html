@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.8";
+const APP_V="6.9";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -751,14 +751,9 @@ async function syncInvoices(silent){
     }));
     let added=0,total=0;
     const years=files.map(f=>Number((f.name.match(INVOICE_RE)||[])[1])||2026);
-    // Remove existing excel incomes belonging to the years we're about to (re)read,
-    // so a refresh fully rebuilds those years and fixes any previously mis-dated rows.
-    const yearSet=new Set(years);
-    S.incomes=S.incomes.filter(i=>{
-      if(i.source!=="excel")return true;
-      const iy=i.invYear!=null?i.invYear:new Date(i.date+"T00:00:00").getFullYear();
-      return !yearSet.has(iy);
-    });
+    // Rebuild from scratch: drop ALL Excel-sourced incomes, then re-read every file.
+    // Manual incomes (source!=="excel") are preserved.
+    S.incomes=S.incomes.filter(i=>i.source!=="excel");
     for(const f of files){
       const yr=Number((f.name.match(INVOICE_RE)||[])[1])||2026;
       const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+f.id+"?alt=media");
@@ -1638,6 +1633,11 @@ function renderImpostazioni(){
     <button class="btn btn-ghost" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
+    <span class="label">Manutenzione fatture</span>
+    <div class="small" style="margin-bottom:12px">Se noti fatture duplicate, azzera le entrate importate da Excel e poi premi "Aggiorna da Drive" nella pagina Entrate per reimportarle pulite. Le entrate inserite a mano non vengono toccate.</div>
+    <button class="btn btn-ghost" data-act="clear-invoices">Azzera fatture importate</button>
+  </div>
+  <div class="card">
     <span class="label">Usare l'app sull'iPhone</span>
     <div class="small">1. Apri l'indirizzo dell'app in Safari.<br>
     2. Tocca Condividi → "Aggiungi alla schermata Home": diventa un'app a schermo intero.<br>
@@ -2078,6 +2078,12 @@ document.addEventListener("click",ev=>{
   else if(act==="imp-excel"){document.getElementById("xls-input").click();}
   else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
+  else if(act==="clear-invoices"){
+    const before=S.incomes.filter(i=>i.source==="excel").length;
+    S.incomes=S.incomes.filter(i=>i.source!=="excel");
+    S.notice=before+(before===1?" fattura importata rimossa. Ora usa \"Aggiorna da Drive\".":" fatture importate rimosse. Ora usa \"Aggiorna da Drive\".");
+    persist();render();
+  }
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
   else if(act==="clear-notice"){S.notice="";render();}
