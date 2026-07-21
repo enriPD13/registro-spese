@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="7.1";
+const APP_V="7.2";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1186,7 +1186,8 @@ function renderScadenze(){
 /* ---------- Entrate ---------- */
 function incomeRow(i){
   const f=FREQS.find(x=>x.id===i.freq);
-  const dotc=i.source==="excel"?"var(--accent)":(i.categoryId?incCatById(i.categoryId).color:"var(--accent)");
+  const cat=i.categoryId?incCatById(i.categoryId):null;
+  const dotc=(cat&&cat.id!=="?")?cat.color:"var(--accent)";
   return '<div class="row">'+
     '<span class="dot" style="background:'+dotc+'"></span>'+
     '<div class="rdesc"><div class="rtitle">'+esc(i.desc)+
@@ -1200,12 +1201,10 @@ function incomeRow(i){
 }
 function renderEntrate(){
   const Y=S.viewY;
-  const yearInc=S.incomes.filter(i=>new Date(i.date+"T00:00:00").getFullYear()===Y);
-  const totYear=yearInc.reduce((s,i)=>s+Number(i.amount),0);
+  const totYear=yearIncome(Y);
   const monthsElapsed=(Y===now.getFullYear())?now.getMonth()+1:12;
   const avg=totYear/Math.max(1,monthsElapsed);
-  const monthList=S.incomes.filter(i=>{const d=new Date(i.date+"T00:00:00");return d.getFullYear()===Y&&d.getMonth()===S.viewM;})
-    .slice().sort((a,b)=>a.date<b.date?1:-1);
+  const monthList=monthIncomes(Y,S.viewM).slice().sort((a,b)=>a.date<b.date?1:-1);
   const totMonth=monthList.reduce((s,i)=>s+Number(i.amount),0);
   const drive=S.gClientId?'<button class="btn btn-ghost" data-act="inc-drive" style="flex:1">Aggiorna da Drive</button>':'';
   const lastInv=S.lastInvoiceSync?"Ultimo aggiornamento fatture: "+new Date(S.lastInvoiceSync).toLocaleString("it-IT"):"Le fatture si aggiornano da sole all'accesso Google, oppure col pulsante.";
@@ -1253,7 +1252,7 @@ function drawIncomeCharts(){
   const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const Y=S.viewY;
   const perMonth=Array(12).fill(0),cum=[];
-  S.incomes.forEach(i=>{const d=new Date(i.date+"T00:00:00");if(d.getFullYear()===Y)perMonth[d.getMonth()]+=Number(i.amount);});
+  for(let m=0;m<12;m++)perMonth[m]=monthIncomes(Y,m).reduce((s,i)=>s+Number(i.amount),0);
   let run=0;perMonth.forEach(v=>{run+=v;cum.push(run);});
   const mEl=document.getElementById("chart-inc-month");
   if(mEl)charts.push(new Chart(mEl,{type:"bar",
@@ -1269,8 +1268,7 @@ function drawIncomeCharts(){
       scales:{y:{ticks:{callback:v=>eurShort(v),color:cssv("--muted"),font:{family:"Inter",size:10}},grid:{color:cssv("--line")},border:{display:false}},
         x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:10,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
   const byVoce={};
-  S.incomes.forEach(i=>{
-    const d=new Date(i.date+"T00:00:00");if(d.getFullYear()!==Y)return;
+  for(let m=0;m<12;m++)monthIncomes(Y,m).forEach(i=>{
     const key=i.source==="excel"?i.desc:(i.categoryId?incCatById(i.categoryId).name:"Altro");
     byVoce[key]=(byVoce[key]||0)+Number(i.amount);
   });
