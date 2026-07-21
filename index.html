@@ -207,7 +207,7 @@
 
 <header>
   <div class="hwrap">
-    <h1>Registro Spese</h1>
+    <h1 id="app-title">Registro Spese</h1>
     <button class="iconcircle" id="btn-scan" title="Scansiona una spesa"></button>
   </div>
 </header>
@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="5.9";
+const APP_V="6.0";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -851,8 +851,15 @@ function amountLabel(e,y,m){
 }
 
 /* ================= RENDER ================= */
+const TAB_TITLES={
+  riepilogo:"Riepilogo",calendario:"Calendario",spese:"Spese",scadenze:"Scadenze",
+  entrate:"Entrate",risparmi:"Risparmi",categorie:"Categorie spese",
+  "cat-entrate":"Categorie entrate",impostazioni:"Impostazioni",
+};
 function render(){
   charts.forEach(c=>c.destroy());charts=[];
+  const tEl=document.getElementById("app-title");
+  if(tEl)tEl.textContent=TAB_TITLES[S.tab]||"Registro Spese";
   renderTabs();
   const fn={riepilogo:renderRiepilogo,calendario:renderCalendario,spese:renderSpese,
     scadenze:renderScadenze,categorie:renderCategorie,impostazioni:renderImpostazioni,
