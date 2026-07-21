@@ -14,6 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
@@ -221,6 +222,7 @@
 <div class="overlay" id="altro-overlay">
   <div class="sheet">
     <div class="grab"></div>
+    <div class="menu-row" data-act="go" data-id="entrate"><span class="menu-ic" data-ic="euro"></span><div style="flex:1">Entrate<div class="small">Guadagni, import da Excel fatture</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
     <div class="menu-row" data-act="go" data-id="categorie"><span class="menu-ic" data-ic="tag"></span><div style="flex:1">Categorie<div class="small">Nomi, colori, nuove etichette</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
     <div class="menu-row" data-act="go" data-id="impostazioni"><span class="menu-ic" data-ic="sliders"></span><div style="flex:1">Impostazioni<div class="small">Scansione IA, Google, backup, aggiornamenti</div></div><span data-ic="chev-r" style="color:var(--muted)"></span></div>
   </div>
@@ -337,6 +339,39 @@
   </div>
 </div>
 
+<!-- income modal -->
+<div class="overlay" id="inc-overlay">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h2 id="inc-title">Nuova entrata</h2>
+    <div class="mb"><label class="label">Descrizione</label>
+      <input class="input" id="i-desc" placeholder="Es. Fattura Randstad, modulo GOL"></div>
+    <div class="frow mb">
+      <div><label class="label">Importo (€)</label>
+        <input class="input" id="i-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00"></div>
+      <div><label class="label">Data</label>
+        <input class="input" id="i-date" type="date"></div>
+    </div>
+    <div class="frow" style="margin-top:8px">
+      <button class="btn btn-ghost" style="flex:1" id="inc-cancel">Annulla</button>
+      <button class="btn btn-primary" style="flex:2" id="inc-save">Salva entrata</button>
+    </div>
+  </div>
+</div>
+
+<!-- excel import modal -->
+<div class="overlay" id="imp-overlay">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h2>Importa dall'Excel</h2>
+    <div id="imp-info"></div>
+    <div class="frow" style="margin-top:16px">
+      <button class="btn btn-ghost" style="flex:1" id="imp-cancel">Annulla</button>
+      <button class="btn btn-primary" style="flex:2" id="imp-confirm">Importa</button>
+    </div>
+  </div>
+</div>
+
 <!-- scanning spinner -->
 <div class="overlay" id="spin">
   <div class="spinbox">
@@ -377,7 +412,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="5.0";
+const APP_V="5.3";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -426,6 +461,7 @@ const S={
   calY:now.getFullYear(),calM:now.getMonth(),selDay:null,
   filterCat:"all",editId:null,notice:"",error:"",
   templates:[],gClientId:"",lastSync:0,savedAt:0,
+  incomes:[],lastInvoiceSync:0,
 };
 let charts=[];
 
@@ -453,7 +489,7 @@ const store={
 };
 async function persistLocal(){
   const ok=await store.save({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,
-    templates:S.templates,gClientId:S.gClientId,lastSync:S.lastSync,savedAt:S.savedAt});
+    templates:S.templates,gClientId:S.gClientId,lastSync:S.lastSync,savedAt:S.savedAt,incomes:S.incomes,lastInvoiceSync:S.lastInvoiceSync});
   if(!ok&&store.mode!=="none"){S.error="Salvataggio non riuscito: i dati restano in memoria per questa sessione.";}
 }
 async function persist(){
@@ -471,7 +507,7 @@ function gEnsureClient(){
   if(!gTC){
     gTC=google.accounts.oauth2.initTokenClient({
       client_id:S.gClientId,
-      scope:"https://www.googleapis.com/auth/drive.appdata",
+      scope:"https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.readonly",
       callback:(resp)=>{
         if(resp&&resp.access_token){
           gTokenObj={token:resp.access_token,exp:Date.now()+((resp.expires_in||3600)-60)*1000};
@@ -503,7 +539,7 @@ async function driveFind(){
 }
 function drivePayload(){
   return JSON.stringify({expenses:S.expenses,categories:S.categories,apiKey:S.apiKey,
-    templates:S.templates,savedAt:S.savedAt||0});
+    templates:S.templates,incomes:S.incomes,savedAt:S.savedAt||0});
 }
 async function drivePush(fileId){
   const body=drivePayload();
@@ -531,6 +567,7 @@ async function syncNow(){
         if(Array.isArray(remote.categories)&&remote.categories.length)S.categories=remote.categories;
         if(Array.isArray(remote.templates)&&remote.templates.length)S.templates=remote.templates;
         if(typeof remote.apiKey==="string"&&remote.apiKey&&!S.apiKey)S.apiKey=remote.apiKey;
+        if(Array.isArray(remote.incomes))S.incomes=remote.incomes;
         S.savedAt=rAt;
         S.notice="Dati aggiornati da Google Drive (versione più recente).";
       }else{
@@ -543,6 +580,7 @@ async function syncNow(){
     }
     S.lastSync=Date.now();
     await persistLocal();
+    syncInvoices(true);
   }catch(err){
     S.error="Sincronizzazione non riuscita ("+(err&&err.message?err.message:"errore")+").";
   }
@@ -559,6 +597,70 @@ function schedulePush(){
       await persistLocal();
     }catch(e){}
   },1500);
+}
+
+/* ================= DRIVE: INVOICE FILE ================= */
+const INVOICE_NAME="Riepilogo_2026.xlsx";
+const MESE_IDX={GENNAIO:0,FEBBRAIO:1,MARZO:2,APRILE:3,MAGGIO:4,GIUGNO:5,LUGLIO:6,AGOSTO:7,SETTEMBRE:8,OTTOBRE:9,NOVEMBRE:10,DICEMBRE:11};
+async function driveFindInvoice(){
+  const q="name='"+INVOICE_NAME+"' and mimeType!='application/vnd.google-apps.folder' and trashed=false";
+  const r=await gFetch("https://www.googleapis.com/drive/v3/files?fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&q="+encodeURIComponent(q));
+  const j=await r.json();
+  return (j.files&&j.files[0])||null;
+}
+function isoFrom(v){
+  if(v instanceof Date&&!isNaN(v))return v.getFullYear()+"-"+String(v.getMonth()+1).padStart(2,"0")+"-"+String(v.getDate()).padStart(2,"0");
+  if(typeof v==="string"){const m=v.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[1]+"-"+m[2]+"-"+m[3];}
+  if(typeof v==="number"&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*86400000));return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+  return null;
+}
+function parseInvoiceWorkbook(buf){
+  const wb=XLSX.read(buf,{type:"array",cellDates:true});
+  const ws=wb.Sheets["Foglio1"]||wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  if(!rows.length)return [];
+  const head=rows[0].map(c=>String(c||"").trim().toUpperCase());
+  const col=n=>head.findIndex(h=>h===n);
+  const ci={num:col("NUMERO"),ente:col("ENTE"),mese:col("MESE"),imp:col("IMPORTO"),df:col("DATA FATTURA"),dp:col("DATA PAGAMENTO")};
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];if(!row)continue;
+    const amount=Number(row[ci.imp]);
+    if(!amount||amount<=0)continue;
+    let iso=ci.df>-1?isoFrom(row[ci.df]):null;
+    if(!iso&&ci.mese>-1){const mi=MESE_IDX[String(row[ci.mese]||"").trim().toUpperCase()];if(mi!=null)iso="2026-"+String(mi+1).padStart(2,"0")+"-01";}
+    if(!iso)continue;
+    const ente=ci.ente>-1&&row[ci.ente]!=null?String(row[ci.ente]).trim():"Fattura";
+    const num=ci.num>-1?row[ci.num]:null;
+    out.push({num,desc:ente,amount,date:iso,paid:ci.dp>-1?isoFrom(row[ci.dp]):null});
+  }
+  return out;
+}
+async function syncInvoices(silent){
+  if(!gTokenValid()){if(!silent){S.error="Accedi prima a Google (Sincronizza) per leggere le fatture.";render();}return;}
+  try{
+    const f=await driveFindInvoice();
+    if(!f){if(!silent){S.error="Non trovo \""+INVOICE_NAME+"\" nel tuo Drive.";render();}return;}
+    const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+f.id+"?alt=media");
+    const buf=await r.arrayBuffer();
+    const items=parseInvoiceWorkbook(buf);
+    // key by invoice number when present, else date+amount+ente
+    const keyOf=i=>i.num!=null?"n:"+i.num:(i.date+"|"+i.amount+"|"+i.desc.toLowerCase());
+    const have=new Set(S.incomes.map(i=>i.source==="excel"?(i.invNum!=null?"n:"+i.invNum:(i.date+"|"+i.amount+"|"+i.desc.toLowerCase())):null));
+    let added=0;
+    items.forEach(i=>{
+      if(have.has(keyOf(i)))return;
+      S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),
+        desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,paidDate:i.paid});
+      added++;
+    });
+    S.lastInvoiceSync=Date.now();
+    if(added>0){S.notice=added+(added===1?" entrata importata":" entrate importate")+" da "+INVOICE_NAME+".";persist();}
+    else{if(!silent)S.notice="Entrate già aggiornate ("+items.length+" fatture nel file).";await persistLocal();}
+    render();
+  }catch(err){
+    if(!silent){S.error="Lettura fatture non riuscita ("+(err&&err.message?err.message:"errore")+").";render();}
+  }
 }
 
 /* ================= UTILS ================= */
@@ -594,6 +696,9 @@ function monthExpenses(y,m){
     const d=new Date(e.date+"T00:00:00");
     return d.getFullYear()===y&&d.getMonth()===m;
   });
+}
+function monthIncomes(y,m){
+  return S.incomes.filter(i=>{const d=new Date(i.date+"T00:00:00");return d.getFullYear()===y&&d.getMonth()===m;});
 }
 function dayExpenses(y,m,day){
   return S.expenses.filter(e=>{
@@ -634,7 +739,8 @@ function render(){
   charts.forEach(c=>c.destroy());charts=[];
   renderTabs();
   const fn={riepilogo:renderRiepilogo,calendario:renderCalendario,spese:renderSpese,
-    scadenze:renderScadenze,categorie:renderCategorie,impostazioni:renderImpostazioni}[S.tab];
+    scadenze:renderScadenze,categorie:renderCategorie,impostazioni:renderImpostazioni,
+    entrate:renderEntrate}[S.tab];
   document.getElementById("main").innerHTML='<div class="view">'+banners()+fn()+'</div>';
   afterRender();
 }
@@ -647,7 +753,7 @@ function banners(){
 }
 function renderTabs(){
   const urgent=S.expenses.filter(e=>e.recurring&&daysTo(nextDue(e))<=7).length;
-  const inAltro=S.tab==="categorie"||S.tab==="impostazioni";
+  const inAltro=S.tab==="categorie"||S.tab==="impostazioni"||S.tab==="entrate";
   const tabs=[
     ["riepilogo","Riepilogo","pie"],
     ["calendario","Calendario","cal"],
@@ -671,6 +777,8 @@ function renderRiepilogo(){
   const rec=ex.filter(e=>e.recurring).reduce((s,e)=>s+av(e),0);
   const byCat={};ex.forEach(e=>{byCat[e.categoryId]=(byCat[e.categoryId]||0)+av(e);});
   const cats=Object.entries(byCat).map(([id,t])=>({c:catById(id),t})).sort((a,b)=>b.t-a.t);
+  const totIn=monthIncomes(S.viewY,S.viewM).reduce((s,i)=>s+Number(i.amount),0);
+  const saldo=totIn-tot;
   const legend=cats.map(x=>{
     const p=tot?Math.round(x.t/tot*100):0;
     return '<div class="row"><span class="dot" style="background:'+x.c.color+'"></span>'+
@@ -688,6 +796,7 @@ function renderRiepilogo(){
     </div>
     <div class="hero-total" id="hero-total" data-tot="${tot}">${anyEst?"~":""}${eur(tot)}</div>
     <div class="hero-sub">Ricorrenti <b>${eur(rec)}</b> · Una tantum <b>${eur(tot-rec)}</b></div>
+    <div class="hero-sub" style="margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.22)">Entrate <b>${eur(totIn)}</b> · Saldo <b style="${saldo<0?"color:#FFD3C7":""}">${saldo>=0?"+":"−"}${eur(Math.abs(saldo))}</b></div>
     ${anyEst?'<div class="hero-note">~ include importi stimati sulle bollette non ancora registrate</div>':""}
   </div>
   <div class="card"><span class="label">Per categoria</span>
@@ -695,6 +804,9 @@ function renderRiepilogo(){
       <div class="donut-center"><div class="n">${eurShort(tot)}</div><div class="l">${MESI[S.viewM]}</div></div></div>
       <div class="legend">${legend}</div>`
     :`<div class="empty">${icon("pie",34)}Nessuna spesa in questo mese.<br>Usa il pulsante + per iniziare.</div>`}
+  </div>
+  <div class="card"><span class="label">Entrate vs uscite — 6 mesi</span>
+    <canvas id="chart-inout" height="185"></canvas>
   </div>
   <div class="card"><span class="label">Confronto con l'anno scorso</span>
     <canvas id="chart-yoy" height="185"></canvas>
@@ -722,6 +834,26 @@ function drawCharts(){
     labels.push(MESI[mm]);
     cur.push(monthExpenses(yy,mm).reduce((s,e)=>s+(amountFor(e,yy,mm).val||0),0));
     prev.push(monthExpenses(yy-1,mm).reduce((s,e)=>s+(amountFor(e,yy-1,mm).val||0),0));
+  }
+  const ins=[],outs=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date(S.viewY,S.viewM-i,1);
+    const yy=d.getFullYear(),mm=d.getMonth();
+    ins.push(monthIncomes(yy,mm).reduce((s,x)=>s+Number(x.amount),0));
+    outs.push(monthExpenses(yy,mm).reduce((s,e)=>s+(amountFor(e,yy,mm).val||0),0));
+  }
+  const ioEl=document.getElementById("chart-inout");
+  if(ioEl){
+    charts.push(new Chart(ioEl,{type:"bar",
+      data:{labels,datasets:[
+        {label:"Entrate",data:ins,backgroundColor:cssv("--accent"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Uscite",data:outs,backgroundColor:"#D9836B",borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+      ]},
+      options:{responsive:true,
+        plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
+          tooltip:{callbacks:{label:ctx=>" "+ctx.dataset.label+": "+eur(ctx.raw)}}},
+        scales:{y:{ticks:{callback:v=>eurShort(v),color:cssv("--muted"),font:{family:"Inter",size:10.5}},grid:{color:cssv("--line")},border:{display:false}},
+          x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:11,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
   }
   const yEl=document.getElementById("chart-yoy");
   if(yEl){
@@ -847,6 +979,216 @@ function renderScadenze(){
       '</div>'+
     '</div>';}).join("")
   :'<div class="empty">'+icon("clock",34)+'Nessuna spesa ricorrente.<br>Aggiungi una spesa e attiva "Ricorrente".</div>')+'</div>';
+}
+
+/* ---------- Entrate ---------- */
+function incomeRow(i){
+  return '<div class="row">'+
+    '<span class="dot" style="background:var(--accent)"></span>'+
+    '<div class="rdesc"><div class="rtitle">'+esc(i.desc)+(i.source==="excel"?'<span class="rtag tag-var">Excel</span>':"")+'</div>'+
+    '<div class="rmeta">'+new Date(i.date+"T00:00:00").toLocaleDateString("it-IT")+'</div></div>'+
+    '<div class="ramount" style="color:var(--accent-text)">+'+eur(i.amount)+'</div>'+
+    '<button class="iconbtn" data-act="inc-edit" data-id="'+i.id+'">'+icon("pencil",18)+'</button>'+
+    '<button class="iconbtn" data-act="inc-del" data-id="'+i.id+'">'+icon("x",18)+'</button>'+
+  '</div>';
+}
+function renderEntrate(){
+  const Y=S.viewY;
+  const yearInc=S.incomes.filter(i=>new Date(i.date+"T00:00:00").getFullYear()===Y);
+  const totYear=yearInc.reduce((s,i)=>s+Number(i.amount),0);
+  const monthsElapsed=(Y===now.getFullYear())?now.getMonth()+1:12;
+  const avg=totYear/Math.max(1,monthsElapsed);
+  const monthList=S.incomes.filter(i=>{const d=new Date(i.date+"T00:00:00");return d.getFullYear()===Y&&d.getMonth()===S.viewM;})
+    .slice().sort((a,b)=>a.date<b.date?1:-1);
+  const totMonth=monthList.reduce((s,i)=>s+Number(i.amount),0);
+  const drive=S.gClientId?'<button class="btn btn-ghost" data-act="inc-drive" style="flex:1">Aggiorna da Drive</button>':'';
+  const lastInv=S.lastInvoiceSync?"Ultimo aggiornamento fatture: "+new Date(S.lastInvoiceSync).toLocaleString("it-IT"):"Le fatture si aggiornano da sole all'accesso Google, oppure col pulsante.";
+  return `
+  <div class="hero">
+    <div class="hero-top"><span class="hero-month">ENTRATE ${Y}</span>
+      <div class="hero-nav">
+        <button class="hero-chip" data-act="year" data-d="-1">${icon("chev-l",19)}</button>
+        <button class="hero-chip" data-act="year" data-d="1">${icon("chev-r",19)}</button>
+      </div>
+    </div>
+    <div class="hero-total">${eur(totYear)}</div>
+    <div class="hero-sub">Media mensile <b>${eur(avg)}</b> · ${monthsElapsed} ${monthsElapsed===1?"mese":"mesi"}</div>
+  </div>
+  <div class="card" style="padding:14px">
+    <div class="frow">
+      <button class="btn btn-primary" data-act="inc-new" style="flex:1">+ Aggiungi</button>
+      ${drive}
+      <button class="btn btn-ghost" data-act="imp-excel" style="flex:1">File…</button>
+    </div>
+    <input type="file" id="xls-input" accept=".xlsx,.xls,.csv" style="display:none">
+    <div class="small" style="margin-top:10px">${lastInv}</div>
+  </div>
+  <div class="card"><span class="label">Guadagno per mese</span>
+    <canvas id="chart-inc-month" height="185"></canvas></div>
+  <div class="card"><span class="label">Andamento cumulato ${Y}</span>
+    <canvas id="chart-inc-cum" height="175"></canvas></div>
+  <div class="card"><span class="label">Guadagno per ente</span>
+    <div class="donut-wrap"><canvas id="chart-inc-ente" width="190" height="190"></canvas>
+      <div class="donut-center"><div class="n">${eurShort(totYear)}</div><div class="l">${Y}</div></div></div>
+    <div class="legend" id="inc-ente-legend"></div></div>
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span class="label" style="margin:0">Dettaglio — ${MESI_FULL[S.viewM]}</span>
+      <div style="display:flex;gap:4px">
+        <button class="iconbtn" data-act="month" data-d="-1" style="color:var(--ink)">${icon("chev-l",20)}</button>
+        <button class="iconbtn" data-act="month" data-d="1" style="color:var(--ink)">${icon("chev-r",20)}</button>
+      </div>
+    </div>
+    <div style="font-weight:800;font-size:20px;color:var(--accent-text);margin-bottom:6px">+${eur(totMonth)}</div>
+    ${monthList.length?monthList.map(incomeRow).join(""):'<div class="empty">'+icon("euro",30)+'Nessuna entrata in questo mese.</div>'}
+  </div>`;
+}
+function drawIncomeCharts(){
+  const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const Y=S.viewY;
+  const perMonth=Array(12).fill(0),cum=[];
+  S.incomes.forEach(i=>{const d=new Date(i.date+"T00:00:00");if(d.getFullYear()===Y)perMonth[d.getMonth()]+=Number(i.amount);});
+  let run=0;perMonth.forEach(v=>{run+=v;cum.push(run);});
+  const mEl=document.getElementById("chart-inc-month");
+  if(mEl)charts.push(new Chart(mEl,{type:"bar",
+    data:{labels:MESI,datasets:[{data:perMonth,backgroundColor:cssv("--accent"),borderRadius:6,barPercentage:.72}]},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>" "+eur(c.raw)}}},
+      scales:{y:{ticks:{callback:v=>eurShort(v),color:cssv("--muted"),font:{family:"Inter",size:10}},grid:{color:cssv("--line")},border:{display:false}},
+        x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:10,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
+  const cEl=document.getElementById("chart-inc-cum");
+  if(cEl)charts.push(new Chart(cEl,{type:"line",
+    data:{labels:MESI,datasets:[{data:cum,borderColor:cssv("--accent"),backgroundColor:"transparent",
+      tension:.32,pointRadius:3,fill:false}]},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>" "+eur(c.raw)}}},
+      scales:{y:{ticks:{callback:v=>eurShort(v),color:cssv("--muted"),font:{family:"Inter",size:10}},grid:{color:cssv("--line")},border:{display:false}},
+        x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:10,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
+  const byEnte={};
+  S.incomes.forEach(i=>{const d=new Date(i.date+"T00:00:00");if(d.getFullYear()===Y)byEnte[i.desc]=(byEnte[i.desc]||0)+Number(i.amount);});
+  const ents=Object.entries(byEnte).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+  const pal=["#0FA36B","#0B5E4A","#5A7D8C","#C4682F","#B0793A","#6D5B97","#8B887C","#3E7C6A","#A65D57"];
+  const eEl=document.getElementById("chart-inc-ente");
+  if(eEl&&ents.length){
+    charts.push(new Chart(eEl,{type:"doughnut",
+      data:{labels:ents.map(e=>e.k),datasets:[{data:ents.map(e=>e.v),backgroundColor:ents.map((e,i)=>pal[i%pal.length]),borderWidth:0,spacing:2,borderRadius:5}]},
+      options:{cutout:"70%",responsive:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>" "+eur(c.raw)}}}}}));
+    const totY=ents.reduce((s,e)=>s+e.v,0);
+    const leg=document.getElementById("inc-ente-legend");
+    if(leg)leg.innerHTML=ents.map((e,i)=>'<div class="row"><span class="dot" style="background:'+pal[i%pal.length]+'"></span>'+
+      '<div class="rdesc rtitle" style="font-weight:600;font-size:14px">'+esc(e.k)+'</div>'+
+      '<span class="ramount" style="font-size:14px">'+eur(e.v)+'</span><span class="pct">'+(totY?Math.round(e.v/totY*100):0)+'%</span></div>').join("");
+  }
+}
+let incEditId=null;
+function openInc(id){
+  const i=id?S.incomes.find(x=>x.id===id):null;
+  incEditId=id||null;
+  document.getElementById("inc-title").textContent=i?"Modifica entrata":"Nuova entrata";
+  document.getElementById("i-desc").value=i?i.desc:"";
+  document.getElementById("i-amount").value=i?i.amount:"";
+  document.getElementById("i-date").value=i?i.date:todayISO();
+  document.getElementById("inc-overlay").classList.add("open");
+}
+function closeInc(){incEditId=null;document.getElementById("inc-overlay").classList.remove("open");}
+function saveInc(){
+  const desc=document.getElementById("i-desc").value.trim();
+  const amount=Number(document.getElementById("i-amount").value);
+  const date=document.getElementById("i-date").value||todayISO();
+  if(!desc||!amount||amount<=0)return;
+  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date}:x);
+  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual"});
+  closeInc();persist();render();
+}
+/* --- excel import --- */
+let pendingImport=null;
+function parseAmount(v){
+  if(typeof v==="number")return v;
+  if(v==null)return NaN;
+  let s=String(v).replace(/[€\s]/g,"");
+  if(s.includes(",")&&s.includes("."))s=s.replace(/\./g,"").replace(",",".");
+  else if(s.includes(","))s=s.replace(",",".");
+  return Number(s);
+}
+function parseDateCell(v){
+  if(v instanceof Date&&!isNaN(v))return v;
+  if(typeof v==="string"){
+    let m=v.trim().match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if(m){let y=Number(m[3]);if(y<100)y+=2000;return new Date(y,Number(m[2])-1,Number(m[1]));}
+    m=v.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m)return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  }
+  return null;
+}
+function importExcel(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const wb=XLSX.read(reader.result,{type:"array",cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+      const KW={date:["data","date","emissione","incasso","pagamento","scadenza"],
+        amount:["totale","importo","lordo","compenso","imponibile","amount"]};
+      const DESC_PRIORITY=["cliente","committente","azienda","ragione sociale","denominazione","oggetto","descrizione","causale"];
+      let hIdx=-1,ci={date:-1,amount:-1,desc:-1};
+      for(let r=0;r<Math.min(rows.length,10);r++){
+        const row=rows[r]||[];
+        const found={date:-1,amount:-1};
+        row.forEach((cell,c)=>{
+          if(typeof cell!=="string")return;
+          const s=cell.toLowerCase();
+          for(const k in KW){if(found[k]===-1&&KW[k].some(w=>s.includes(w)))found[k]=c;}
+        });
+        if(found.date>-1&&found.amount>-1){
+          hIdx=r;ci={date:found.date,amount:found.amount,desc:-1};
+          // pick description column by priority order, not first match
+          for(const w of DESC_PRIORITY){
+            const idx=row.findIndex(cell=>typeof cell==="string"&&cell.toLowerCase().includes(w));
+            if(idx>-1&&idx!==ci.date&&idx!==ci.amount){ci.desc=idx;break;}
+          }
+          break;
+        }
+      }
+      if(hIdx===-1)throw new Error("non trovo le colonne Data e Importo nell'intestazione");
+      const items=[];
+      for(let r=hIdx+1;r<rows.length;r++){
+        const row=rows[r]||[];
+        let dv=row[ci.date];
+        if(typeof dv==="number"&&dv>20000&&dv<80000)dv=new Date(Math.round((dv-25569)*86400000));
+        const d=parseDateCell(dv);
+        const a=parseAmount(row[ci.amount]);
+        if(!d||isNaN(d.getTime())||!a||a<=0)continue;
+        const desc=ci.desc>-1&&row[ci.desc]!=null?String(row[ci.desc]).trim():"Fattura";
+        const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+        items.push({desc:desc||"Fattura",amount:a,date:iso});
+      }
+      const existing=new Set(S.incomes.map(i=>i.date+"|"+i.amount+"|"+i.desc.toLowerCase()));
+      const fresh=items.filter(i=>!existing.has(i.date+"|"+i.amount+"|"+i.desc.toLowerCase()));
+      pendingImport={items:fresh};
+      const colName=c=>c>-1&&rows[hIdx][c]!=null?String(rows[hIdx][c]):"—";
+      document.getElementById("imp-info").innerHTML=
+        '<div class="small" style="margin-bottom:10px">Colonne riconosciute — Data: <b>'+esc(colName(ci.date))+'</b> · Importo: <b>'+esc(colName(ci.amount))+'</b> · Descrizione: <b>'+esc(colName(ci.desc))+'</b></div>'+
+        '<div class="small">Righe valide nel file: '+items.length+' · Nuove da importare: <b>'+fresh.length+'</b>'+(items.length>fresh.length?' (le altre sono già presenti)':'')+'</div>'+
+        (fresh.length?'<div class="legend" style="margin-top:10px">'+fresh.slice(0,4).map(i=>
+          '<div class="row" style="padding:8px 0"><div class="rdesc rtitle" style="font-size:13.5px;font-weight:600">'+esc(i.desc)+'</div><span class="small">'+i.date+'</span><span class="ramount" style="font-size:13.5px">'+eur(i.amount)+'</span></div>').join("")+
+          (fresh.length>4?'<div class="small" style="text-align:center;padding-top:6px">… e altre '+(fresh.length-4)+'</div>':"")+'</div>':"");
+      const btn=document.getElementById("imp-confirm");
+      btn.disabled=!fresh.length;
+      btn.textContent=fresh.length?"Importa "+fresh.length+(fresh.length===1?" entrata":" entrate"):"Niente da importare";
+      document.getElementById("imp-overlay").classList.add("open");
+    }catch(err){
+      S.error="Importazione non riuscita ("+(err&&err.message?err.message:"file non leggibile")+").";render();
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function confirmImport(){
+  if(!pendingImport||!pendingImport.items.length)return;
+  pendingImport.items.forEach(i=>{
+    S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),desc:i.desc,amount:i.amount,date:i.date,source:"excel"});
+  });
+  S.notice=pendingImport.items.length+" entrate importate dall'Excel.";
+  pendingImport=null;
+  document.getElementById("imp-overlay").classList.remove("open");
+  persist();render();
 }
 
 /* ---------- Categorie ---------- */
@@ -1211,7 +1553,7 @@ async function scan(file){
 
 /* ================= BACKUP ================= */
 function exportBackup(){
-  const blob=new Blob([JSON.stringify({expenses:S.expenses,categories:S.categories,templates:S.templates},null,2)],{type:"application/json"});
+  const blob=new Blob([JSON.stringify({expenses:S.expenses,categories:S.categories,templates:S.templates,incomes:S.incomes},null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="registro-spese-backup-"+todayISO()+".json";
@@ -1225,7 +1567,8 @@ function importBackup(file){
       if(Array.isArray(d.expenses))S.expenses=d.expenses;
       if(Array.isArray(d.categories)&&d.categories.length)S.categories=d.categories;
       if(Array.isArray(d.templates)&&d.templates.length)S.templates=d.templates;
-      S.notice="Backup importato: "+S.expenses.length+" spese.";
+      if(Array.isArray(d.incomes))S.incomes=d.incomes;
+      S.notice="Backup importato: "+S.expenses.length+" spese, "+S.incomes.length+" entrate.";
       persist();render();
     }catch(e){S.error="File di backup non valido.";render();}
   };
@@ -1300,6 +1643,12 @@ document.addEventListener("click",ev=>{
   else if(act==="tpl-edit"){openTpe(t.dataset.id);}
   else if(act==="tpl-del"){S.templates=S.templates.filter(x=>x.id!==t.dataset.id);persist();openTpl();}
   else if(act==="tpl-new"){openTpe(null);}
+  else if(act==="year"){S.viewY+=Number(t.dataset.d);render();}
+  else if(act==="inc-drive"){syncInvoices(false);}
+  else if(act==="inc-new"){openInc(null);}
+  else if(act==="inc-edit"){openInc(t.dataset.id);}
+  else if(act==="inc-del"){S.incomes=S.incomes.filter(x=>x.id!==t.dataset.id);persist();render();}
+  else if(act==="imp-excel"){document.getElementById("xls-input").click();}
   else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
   else if(act==="export")exportBackup();
@@ -1343,6 +1692,16 @@ document.getElementById("tpe-save").addEventListener("click",saveTpe);
 document.getElementById("tpe-overlay").addEventListener("click",ev=>{
   if(ev.target.id==="tpe-overlay")closeTpe();
 });
+document.getElementById("inc-cancel").addEventListener("click",closeInc);
+document.getElementById("inc-save").addEventListener("click",saveInc);
+document.getElementById("inc-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="inc-overlay")closeInc();
+});
+document.getElementById("imp-cancel").addEventListener("click",()=>{pendingImport=null;document.getElementById("imp-overlay").classList.remove("open");});
+document.getElementById("imp-confirm").addEventListener("click",confirmImport);
+document.getElementById("imp-overlay").addEventListener("click",ev=>{
+  if(ev.target.id==="imp-overlay"){pendingImport=null;document.getElementById("imp-overlay").classList.remove("open");}
+});
 document.getElementById("bill-cancel").addEventListener("click",closeBill);
 document.getElementById("bill-save").addEventListener("click",saveBill);
 document.getElementById("bill-overlay").addEventListener("click",ev=>{
@@ -1356,10 +1715,15 @@ document.addEventListener("change",ev=>{
     const f=ev.target.files&&ev.target.files[0];ev.target.value="";
     if(f)importBackup(f);
   }
+  if(ev.target.id==="xls-input"){
+    const f=ev.target.files&&ev.target.files[0];ev.target.value="";
+    if(f)importExcel(f);
+  }
 });
 
 function afterRender(){
   if(S.tab==="riepilogo"){drawCharts();animateTotal();}
+  if(S.tab==="entrate")drawIncomeCharts();
 }
 
 /* ================= INIT ================= */
@@ -1375,6 +1739,8 @@ function afterRender(){
     if(typeof data.gClientId==="string")S.gClientId=data.gClientId;
     if(data.lastSync)S.lastSync=data.lastSync;
     if(data.savedAt)S.savedAt=data.savedAt;
+    if(Array.isArray(data.incomes))S.incomes=data.incomes;
+    if(data.lastInvoiceSync)S.lastInvoiceSync=data.lastInvoiceSync;
   }
   if(!S.templates.length)S.templates=DEFAULT_TEMPLATES.map(t=>({...t}));
   render();
