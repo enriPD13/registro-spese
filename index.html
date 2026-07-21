@@ -422,7 +422,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="5.6";
+const APP_V="5.7";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1697,7 +1697,7 @@ async function forceUpdate(){
 
 /* ================= EVENTS ================= */
 document.addEventListener("click",ev=>{
-  const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq],[data-tcat],[data-tfreq],[data-ccolor]");
+  const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq],[data-ifreq],[data-icat],[data-tcat],[data-tfreq],[data-ccolor]");
   if(!t)return;
   if(t.dataset.fcat!==undefined){
     document.querySelectorAll("#f-cats .chip").forEach(x=>x.classList.remove("active"));
