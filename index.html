@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.4";
+const APP_V="6.7";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -718,17 +718,23 @@ function parseInvoiceWorkbook(buf,fileYear){
   const col=n=>head.findIndex(h=>h===n);
   const ci={num:col("NUMERO"),ente:col("ENTE"),mese:col("MESE"),imp:col("IMPORTO"),df:col("DATA FATTURA"),dp:col("DATA PAGAMENTO")};
   const yr=fileYear||2026;
+  const forceYear=iso=>{ // keep month/day, force filename year
+    if(!iso)return null;
+    const m=iso.match(/^\d{4}-(\d{2})-(\d{2})/);
+    return m?(yr+"-"+m[1]+"-"+m[2]):null;
+  };
   const out=[];
   for(let r=1;r<rows.length;r++){
     const row=rows[r];if(!row)continue;
     const amount=Number(row[ci.imp]);
     if(!amount||amount<=0)continue;
-    let iso=ci.df>-1?isoFrom(row[ci.df]):null;
+    let iso=ci.df>-1?forceYear(isoFrom(row[ci.df])):null;
     if(!iso&&ci.mese>-1){const mi=MESE_IDX[String(row[ci.mese]||"").trim().toUpperCase()];if(mi!=null)iso=yr+"-"+String(mi+1).padStart(2,"0")+"-01";}
     if(!iso)continue;
     const ente=ci.ente>-1&&row[ci.ente]!=null?String(row[ci.ente]).trim():"Fattura";
     const num=ci.num>-1?row[ci.num]:null;
-    out.push({num,year:yr,desc:ente,amount,date:iso,paid:ci.dp>-1?isoFrom(row[ci.dp]):null});
+    const paid=ci.dp>-1?forceYear(isoFrom(row[ci.dp])):null;
+    out.push({num,year:yr,desc:ente,amount,date:iso,paid});
   }
   return out;
 }
@@ -744,25 +750,34 @@ async function syncInvoices(silent){
       return i.date+"|"+i.amount+"|"+i.desc.toLowerCase();
     }));
     let added=0,total=0;
+    const years=files.map(f=>Number((f.name.match(INVOICE_RE)||[])[1])||2026);
+    // Remove existing excel incomes belonging to the years we're about to (re)read,
+    // so a refresh fully rebuilds those years and fixes any previously mis-dated rows.
+    const yearSet=new Set(years);
+    S.incomes=S.incomes.filter(i=>{
+      if(i.source!=="excel")return true;
+      const iy=i.invYear!=null?i.invYear:new Date(i.date+"T00:00:00").getFullYear();
+      return !yearSet.has(iy);
+    });
     for(const f of files){
       const yr=Number((f.name.match(INVOICE_RE)||[])[1])||2026;
       const r=await gFetch("https://www.googleapis.com/drive/v3/files/"+f.id+"?alt=media");
       const buf=await r.arrayBuffer();
       const items=parseInvoiceWorkbook(buf,yr);
       total+=items.length;
+      const seen=new Set();
       items.forEach(i=>{
         const k=keyOf(i);
-        if(have.has(k))return;
-        have.add(k);
+        if(seen.has(k))return;
+        seen.add(k);
         S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),
           desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,invYear:i.year,paidDate:i.paid,categoryId:"ic-fatture"});
         added++;
       });
     }
     S.lastInvoiceSync=Date.now();
-    if(added>0){S.notice=added+(added===1?" entrata importata":" entrate importate")+" da "+files.length+(files.length===1?" file":" file")+".";persist();}
-    else{if(!silent)S.notice="Entrate già aggiornate ("+total+" fatture in "+files.length+(files.length===1?" file":" file")+").";await persistLocal();}
-    render();
+    S.notice=added+(added===1?" fattura":" fatture")+" da "+files.length+(files.length===1?" file ("+years[0]+")":" file")+".";
+    persist();render();
   }catch(err){
     if(!silent){S.error="Lettura fatture non riuscita ("+(err&&err.message?err.message:"errore")+").";render();}
   }
@@ -1609,11 +1624,6 @@ function renderImpostazioni(){
     <button class="btn btn-ghost" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
-    <span class="label">Manutenzione fatture</span>
-    <div class="small" style="margin-bottom:12px">Se hai importato fatture di anni diversi prima dell'aggiornamento, alcune potrebbero avere l'anno sbagliato. Questo pulsante riallinea la data di ogni fattura all'anno del suo file di origine.</div>
-    <button class="btn btn-ghost" data-act="repair-inv">Correggi anni fatture</button>
-  </div>
-  <div class="card">
     <span class="label">Usare l'app sull'iPhone</span>
     <div class="small">1. Apri l'indirizzo dell'app in Safari.<br>
     2. Tocca Condividi → "Aggiungi alla schermata Home": diventa un'app a schermo intero.<br>
@@ -1951,23 +1961,6 @@ function importBackup(file){
   r.readAsText(file);
 }
 
-/* ================= REPAIR INVOICE DATES ================= */
-function repairInvoiceYears(){
-  let fixed=0;
-  S.incomes=S.incomes.map(i=>{
-    if(i.source!=="excel"||i.invYear==null)return i;
-    const d=new Date(i.date+"T00:00:00");
-    if(d.getFullYear()===i.invYear)return i;
-    // realign year, keep month/day
-    const nd=i.invYear+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-    fixed++;
-    return {...i,date:nd};
-  });
-  if(fixed>0){S.notice=fixed+(fixed===1?" fattura risistemata":" fatture risistemate")+" all'anno corretto.";persist();}
-  else{S.notice="Nessuna fattura da correggere.";persistLocal();}
-  render();
-}
-
 /* ================= UPDATE ================= */
 async function forceUpdate(){
   try{
@@ -2070,7 +2063,6 @@ document.addEventListener("click",ev=>{
   else if(act==="imp-excel"){document.getElementById("xls-input").click();}
   else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
-  else if(act==="repair-inv"){repairInvoiceYears();}
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
   else if(act==="clear-notice"){S.notice="";render();}
