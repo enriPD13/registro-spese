@@ -1,5 +1,5 @@
 /* Registro Spese — service worker: app shell in cache, API sempre in rete */
-const CACHE = "registro-spese-v5.8";
+const CACHE = "registro-spese-v5.9";
 const SHELL = [
   "./",
   "./index.html",

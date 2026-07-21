@@ -275,6 +275,9 @@
       <input class="input" id="c-name" placeholder="Es. Villa, Formazione, Viaggi…"></div>
     <div class="mb"><label class="label">Colore etichetta</label>
       <div class="chips" id="c-colors"></div></div>
+    <div class="mb" id="c-rate-wrap" style="display:none"><label class="label">% da accantonare (fondo tasse)</label>
+      <input class="input" id="c-rate" type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="Predefinita">
+      <div class="small" style="margin-top:5px">Lascia vuoto per usare la percentuale predefinita. Es. 0 per rimborsi non tassabili.</div></div>
     <div class="frow" style="margin-top:8px">
       <button class="btn btn-ghost" style="flex:1" id="cat-cancel">Annulla</button>
       <button class="btn btn-primary" style="flex:2" id="cat-save">Salva categoria</button>
@@ -363,6 +366,9 @@
       <div class="chips" id="i-freqs"></div></div>
     <div class="mb"><label class="label">Categoria</label>
       <div class="chips" id="i-cats"></div></div>
+    <div class="mb"><label class="label">% accantonamento (facoltativo)</label>
+      <input class="input" id="i-rate" type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="Usa quella della categoria">
+      <div class="small" style="margin-top:5px">Compila solo per forzare una percentuale diversa da quella della categoria per questa entrata.</div></div>
     <div class="frow" style="margin-top:8px">
       <button class="btn btn-ghost" style="flex:1" id="inc-cancel">Annulla</button>
       <button class="btn btn-primary" style="flex:2" id="inc-save">Salva entrata</button>
@@ -423,9 +429,9 @@
   <div class="sheet">
     <div class="grab"></div>
     <h2>Accantonamento fiscale</h2>
-    <div class="mb"><label class="label">Percentuale da accantonare</label>
+    <div class="mb"><label class="label">Percentuale predefinita</label>
       <input class="input" id="tx-rate" type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="30">
-      <div class="small" style="margin-top:6px">Percentuale delle entrate dell'anno da mettere da parte per imposta sostitutiva e contributi INPS. Nel forfettario, indicativamente 25–35% a seconda di coefficiente di redditività e aliquote: verifica col tuo commercialista.</div></div>
+      <div class="small" style="margin-top:6px">Si applica alle entrate senza una percentuale propria o di categoria. Puoi impostare aliquote specifiche in "Categorie entrate" e forzarne una sulla singola entrata. Nel forfettario indicativamente 25–35%: verifica col commercialista.</div></div>
     <div class="frow" style="margin-top:8px">
       <button class="btn btn-ghost" style="flex:1" id="tax-cancel">Annulla</button>
       <button class="btn btn-primary" style="flex:2" id="tax-save">Salva</button>
@@ -489,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="5.8";
+const APP_V="5.9";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -514,10 +520,10 @@ const CAT_PALETTE=[
   "#8C5A8C","#6D5B97","#A67C52","#7A6A4F","#8B887C","#5A5750"];
 const KEY="registro-spese-v2";
 const DEFAULT_INC_CATS=[
-  {id:"ic-fatture",name:"Fatture",color:"#0FA36B"},
-  {id:"ic-formazione",name:"Formazione",color:"#5A7D8C"},
-  {id:"ic-consulenze",name:"Consulenze",color:"#B0793A"},
-  {id:"ic-altro",name:"Altro",color:"#8B887C"},
+  {id:"ic-fatture",name:"Fatture",color:"#0FA36B",taxRate:null},
+  {id:"ic-formazione",name:"Formazione",color:"#5A7D8C",taxRate:null},
+  {id:"ic-consulenze",name:"Consulenze",color:"#B0793A",taxRate:null},
+  {id:"ic-altro",name:"Altro",color:"#8B887C",taxRate:null},
 ];
 const DEFAULT_TEMPLATES=[
   {id:"t-luce",group:"Casa & Utenze",desc:"Bolletta luce",cat:"utenze",freq:"bimestrale",variable:true},
@@ -739,7 +745,7 @@ async function syncInvoices(silent){
     items.forEach(i=>{
       if(have.has(keyOf(i)))return;
       S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),
-        desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,paidDate:i.paid});
+        desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,paidDate:i.paid,categoryId:"ic-fatture"});
       added++;
     });
     S.lastInvoiceSync=Date.now();
@@ -1233,6 +1239,7 @@ function openInc(id){
   const icat=i&&i.categoryId?i.categoryId:(S.incCategories[0]&&S.incCategories[0].id);
   document.getElementById("i-cats").innerHTML=S.incCategories.map(c=>
     '<button class="chip '+(icat===c.id?"active":"")+'" data-icat="'+c.id+'">'+esc(c.name)+'</button>').join("");
+  document.getElementById("i-rate").value=(i&&i.taxRate!=null&&i.taxRate!=="")?i.taxRate:"";
   document.getElementById("inc-overlay").classList.add("open");
 }
 function closeInc(){incEditId=null;document.getElementById("inc-overlay").classList.remove("open");}
@@ -1245,9 +1252,10 @@ function saveInc(){
   const freq=rec?(freqBtn?freqBtn.dataset.ifreq:"mensile"):null;
   const catBtn=document.querySelector("#i-cats .chip.active");
   const categoryId=catBtn?catBtn.dataset.icat:(S.incCategories[0]&&S.incCategories[0].id);
-  if(!desc||!amount||amount<=0)return;
-  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date,recurring:rec,freq,categoryId}:x);
-  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual",recurring:rec,freq,categoryId});
+  const rv=document.getElementById("i-rate").value;
+  const taxRate=rv===""?null:Number(rv);
+  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date,recurring:rec,freq,categoryId,taxRate}:x);
+  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual",recurring:rec,freq,categoryId,taxRate});
   closeInc();persist();render();
 }
 /* --- excel import --- */
@@ -1364,13 +1372,19 @@ function renderCategorie(){
 }
 
 /* ---------- Risparmi ---------- */
+function effRate(i){
+  if(i.taxRate!=null&&i.taxRate!=="")return Number(i.taxRate);
+  if(i.categoryId){const c=S.incCategories.find(x=>x.id===i.categoryId);if(c&&c.taxRate!=null&&c.taxRate!=="")return Number(c.taxRate);}
+  return Number(S.taxRate);
+}
 function taxDue(y){
-  let base=0;
+  let due=0;
   S.incomes.forEach(i=>{
-    if(i.recurring){for(let m=0;m<12;m++)if(incDueInMonth(i,y,m))base+=Number(i.amount);}
-    else if(new Date(i.date+"T00:00:00").getFullYear()===y)base+=Number(i.amount);
+    const rate=effRate(i)/100;
+    if(i.recurring){for(let m=0;m<12;m++)if(incDueInMonth(i,y,m))due+=Number(i.amount)*rate;}
+    else if(new Date(i.date+"T00:00:00").getFullYear()===y)due+=Number(i.amount)*rate;
   });
-  return base*(S.taxRate/100);
+  return due;
 }
 function taxSavedTotal(y){return S.taxSaved.filter(t=>t.year===y).reduce((s,t)=>s+Number(t.amount),0);}
 function renderRisparmi(){
@@ -1408,7 +1422,7 @@ function renderRisparmi(){
       </div>
     </div>
     <div class="hero-total">${eur(saved)}</div>
-    <div class="hero-sub">Da accantonare <b>${eur(due)}</b> (${S.taxRate}% delle entrate)</div>
+    <div class="hero-sub">Da accantonare <b>${eur(due)}</b> · aliquote per categoria</div>
     <div style="height:9px;border-radius:99px;background:rgba(255,255,255,.22);overflow:hidden;margin-top:12px">
       <div style="height:100%;width:${pct}%;background:#fff;border-radius:99px;transition:width .4s"></div>
     </div>
@@ -1499,14 +1513,15 @@ function renderCatEntrate(){
   <div class="card">
     ${S.incCategories.map(c=>{
       const n=S.incomes.filter(i=>i.categoryId===c.id).length;
+      const rate=(c.taxRate!=null&&c.taxRate!=="")?c.taxRate+"%":"—";
       return '<div class="row">'+
         '<span style="width:15px;height:15px;border-radius:5px;background:'+c.color+';flex-shrink:0"></span>'+
-        '<div class="rdesc rtitle">'+esc(c.name)+'</div>'+
-        '<span class="small">'+n+' '+(n===1?"entrata":"entrate")+'</span>'+
+        '<div class="rdesc"><div class="rtitle">'+esc(c.name)+'</div><div class="rmeta">Fondo tasse: '+rate+'</div></div>'+
+        '<span class="small">'+n+'</span>'+
         '<button class="iconbtn" data-act="icat-edit" data-id="'+c.id+'">'+icon("pencil",18)+'</button>'+
         (c.id!=="ic-altro"?'<button class="iconbtn" data-act="icat-del" data-id="'+c.id+'">'+icon("x",18)+'</button>':"")+
       '</div>';}).join("")}
-    <div class="small" style="padding-top:10px">Le fatture importate restano categorizzate automaticamente per ente. Eliminando una categoria, le entrate collegate passano ad "Altro".</div>
+    <div class="small" style="padding-top:10px">La % di categoria alimenta il fondo tasse. Le fatture importate sono in "Fatture". Eliminando una categoria, le entrate collegate passano ad "Altro".</div>
   </div>`;
 }
 
@@ -1613,6 +1628,9 @@ function openCat(id,mode){
   catColorSel=c?c.color:CAT_PALETTE[arr.length%CAT_PALETTE.length];
   document.getElementById("cat-title").textContent=c?"Modifica categoria":(catMode==="inc"?"Nuova categoria entrata":"Nuova categoria");
   document.getElementById("c-name").value=c?c.name:"";
+  const rw=document.getElementById("c-rate-wrap");
+  rw.style.display=catMode==="inc"?"block":"none";
+  document.getElementById("c-rate").value=(catMode==="inc"&&c&&c.taxRate!=null&&c.taxRate!=="")?c.taxRate:"";
   renderCatColors();
   document.getElementById("cat-overlay").classList.add("open");
 }
@@ -1627,8 +1645,10 @@ function saveCat(){
   const name=document.getElementById("c-name").value.trim();
   if(!name)return;
   if(catMode==="inc"){
-    if(catEditId)S.incCategories=S.incCategories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
-    else S.incCategories.push({id:"ic"+Date.now(),name,color:catColorSel});
+    const rv=document.getElementById("c-rate").value;
+    const taxRate=rv===""?null:Number(rv);
+    if(catEditId)S.incCategories=S.incCategories.map(c=>c.id===catEditId?{...c,name,color:catColorSel,taxRate}:c);
+    else S.incCategories.push({id:"ic"+Date.now(),name,color:catColorSel,taxRate});
   }else{
     if(catEditId)S.categories=S.categories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
     else S.categories.push({id:"c"+Date.now(),name,color:catColorSel});
