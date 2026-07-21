@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="7.0";
+const APP_V="7.1";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -520,7 +520,7 @@ const CAT_PALETTE=[
   "#8C5A8C","#6D5B97","#A67C52","#7A6A4F","#8B887C","#5A5750"];
 const KEY="registro-spese-v2";
 const DEFAULT_INC_CATS=[
-  {id:"ic-fatture",name:"Fatture",color:"#0FA36B",taxRate:null},
+  {id:"ic-fatture",name:"Fatture",color:"#0FA36B",taxRate:33},
   {id:"ic-formazione",name:"Formazione",color:"#5A7D8C",taxRate:null},
   {id:"ic-consulenze",name:"Consulenze",color:"#B0793A",taxRate:null},
   {id:"ic-altro",name:"Altro",color:"#8B887C",taxRate:null},
@@ -694,6 +694,14 @@ function schedulePush(){
 }
 
 /* ================= DRIVE: INVOICE FILE ================= */
+function ensureFattureCat(){
+  let c=S.incCategories.find(x=>x.id==="ic-fatture");
+  if(!c){
+    c={id:"ic-fatture",name:"Fatture",color:"#0FA36B",taxRate:33};
+    S.incCategories.push(c);
+  }
+  return c.id;
+}
 const INVOICE_NAME="Riepilogo_2026.xlsx";
 const INVOICE_RE=/^Riepilogo_(\d{4})\.xlsx$/i;
 const MESE_IDX={GENNAIO:0,FEBBRAIO:1,MARZO:2,APRILE:3,MAGGIO:4,GIUGNO:5,LUGLIO:6,AGOSTO:7,SETTEMBRE:8,OTTOBRE:9,NOVEMBRE:10,DICEMBRE:11};
@@ -751,6 +759,7 @@ async function syncInvoices(silent){
     }));
     let added=0,total=0;
     const years=files.map(f=>Number((f.name.match(INVOICE_RE)||[])[1])||2026);
+    const fattureCat=ensureFattureCat();
     // Rebuild from scratch: drop ALL Excel-sourced incomes, then re-read every file.
     // Manual incomes (source!=="excel") are preserved.
     S.incomes=S.incomes.filter(i=>i.source!=="excel");
@@ -766,7 +775,7 @@ async function syncInvoices(silent){
         if(seen.has(k))return;
         seen.add(k);
         S.incomes.unshift({id:"i"+Date.now()+Math.random().toString(36).slice(2,6),
-          desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,invYear:i.year,paidDate:i.paid,categoryId:"ic-fatture"});
+          desc:i.desc,amount:i.amount,date:i.date,source:"excel",invNum:i.num,invYear:i.year,paidDate:i.paid,categoryId:fattureCat});
         added++;
       });
     }
