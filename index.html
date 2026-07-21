@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.9";
+const APP_V="7.0";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1633,9 +1633,21 @@ function renderImpostazioni(){
     <button class="btn btn-ghost" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
-    <span class="label">Manutenzione fatture</span>
-    <div class="small" style="margin-bottom:12px">Se noti fatture duplicate, azzera le entrate importate da Excel e poi premi "Aggiorna da Drive" nella pagina Entrate per reimportarle pulite. Le entrate inserite a mano non vengono toccate.</div>
-    <button class="btn btn-ghost" data-act="clear-invoices">Azzera fatture importate</button>
+    <span class="label">Manutenzione entrate</span>
+    ${(()=>{
+      const tot=S.incomes.length;
+      const xls=S.incomes.filter(i=>i.source==="excel").length;
+      const man=tot-xls;
+      const seen={},dups={};
+      S.incomes.forEach(i=>{const k=i.date+"|"+i.amount+"|"+String(i.desc).toLowerCase();seen[k]=(seen[k]||0)+1;});
+      let dupCount=0;Object.values(seen).forEach(n=>{if(n>1)dupCount+=n-1;});
+      return '<div class="small" style="margin-bottom:12px">Totale entrate: <b>'+tot+'</b> · importate da Excel: <b>'+xls+'</b> · inserite a mano: <b>'+man+'</b> · duplicati esatti: <b>'+dupCount+'</b>.</div>';
+    })()}
+    <div class="frow" style="margin-bottom:8px">
+      <button class="btn btn-ghost" style="flex:1" data-act="dedup-incomes">Rimuovi duplicati</button>
+      <button class="btn btn-ghost" style="flex:1" data-act="clear-invoices">Azzera importate</button>
+    </div>
+    <div class="small">"Rimuovi duplicati" elimina le copie con stessa data, importo e descrizione, tenendone una. "Azzera importate" toglie tutte le fatture da Excel (poi usa "Aggiorna da Drive"). Le entrate manuali non vengono toccate da quest'ultimo.</div>
   </div>
   <div class="card">
     <span class="label">Usare l'app sull'iPhone</span>
@@ -2078,6 +2090,17 @@ document.addEventListener("click",ev=>{
   else if(act==="imp-excel"){document.getElementById("xls-input").click();}
   else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
+  else if(act==="dedup-incomes"){
+    const seen=new Set();const kept=[];
+    S.incomes.forEach(i=>{
+      const k=i.date+"|"+i.amount+"|"+String(i.desc).toLowerCase()+"|"+(i.recurring?"r":"o");
+      if(seen.has(k))return;seen.add(k);kept.push(i);
+    });
+    const removed=S.incomes.length-kept.length;
+    S.incomes=kept;
+    S.notice=removed+(removed===1?" duplicato rimosso.":" duplicati rimossi.");
+    persist();render();
+  }
   else if(act==="clear-invoices"){
     const before=S.incomes.filter(i=>i.source==="excel").length;
     S.incomes=S.incomes.filter(i=>i.source!=="excel");
