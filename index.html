@@ -349,9 +349,16 @@
     <div class="frow mb">
       <div><label class="label">Importo (€)</label>
         <input class="input" id="i-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0,00"></div>
-      <div><label class="label">Data</label>
+      <div><label class="label" id="i-date-label">Data</label>
         <input class="input" id="i-date" type="date"></div>
     </div>
+    <div class="toggle mb" id="i-rec-toggle">
+      <input type="checkbox" id="i-rec" style="width:19px;height:19px;accent-color:var(--accent);pointer-events:none">
+      <div><div style="font-weight:700;font-size:14px">Entrata ricorrente</div>
+        <div class="small">Compenso fisso, canone: si ripete e compare nei mesi futuri del calendario</div></div>
+    </div>
+    <div class="mb" id="i-freq-wrap" style="display:none"><label class="label">Frequenza</label>
+      <div class="chips" id="i-freqs"></div></div>
     <div class="frow" style="margin-top:8px">
       <button class="btn btn-ghost" style="flex:1" id="inc-cancel">Annulla</button>
       <button class="btn btn-primary" style="flex:2" id="inc-save">Salva entrata</button>
@@ -412,7 +419,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="5.3";
+const APP_V="5.5";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -459,7 +466,7 @@ const S={
   expenses:[],categories:DEFAULT_CATS.slice(),apiKey:"",
   tab:"riepilogo",viewY:now.getFullYear(),viewM:now.getMonth(),
   calY:now.getFullYear(),calM:now.getMonth(),selDay:null,
-  filterCat:"all",editId:null,notice:"",error:"",
+  filterCat:"all",calFilter:"all",editId:null,notice:"",error:"",
   templates:[],gClientId:"",lastSync:0,savedAt:0,
   incomes:[],lastInvoiceSync:0,
 };
@@ -697,8 +704,29 @@ function monthExpenses(y,m){
     return d.getFullYear()===y&&d.getMonth()===m;
   });
 }
+function incDueInMonth(i,y,m){
+  const st=new Date(i.date+"T00:00:00");
+  const d=monthsDiff(new Date(st.getFullYear(),st.getMonth(),1),new Date(y,m,1));
+  if(d<0)return false;
+  const f=FREQS.find(x=>x.id===i.freq);
+  return d%(f?f.months:1)===0;
+}
+function incDueDay(i,y,m){
+  const st=new Date(i.date+"T00:00:00");
+  return Math.min(st.getDate(),new Date(y,m+1,0).getDate());
+}
 function monthIncomes(y,m){
-  return S.incomes.filter(i=>{const d=new Date(i.date+"T00:00:00");return d.getFullYear()===y&&d.getMonth()===m;});
+  return S.incomes.filter(i=>{
+    if(i.recurring)return incDueInMonth(i,y,m);
+    const d=new Date(i.date+"T00:00:00");return d.getFullYear()===y&&d.getMonth()===m;
+  });
+}
+function dayIncomes(y,m,day){
+  return S.incomes.filter(i=>{
+    if(i.recurring)return incDueInMonth(i,y,m)&&incDueDay(i,y,m)===day;
+    const d=new Date(i.date+"T00:00:00");
+    return d.getFullYear()===y&&d.getMonth()===m&&d.getDate()===day;
+  });
 }
 function dayExpenses(y,m,day){
   return S.expenses.filter(e=>{
@@ -892,39 +920,62 @@ function renderCalendario(){
   const startOffset=(first.getDay()+6)%7;
   const daysInMonth=new Date(y,m+1,0).getDate();
   const today=new Date();
-  const monthTot=monthExpenses(y,m).reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
+  const showIn=S.calFilter!=="out", showOut=S.calFilter!=="in";
+  const monthOut=monthExpenses(y,m).reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
+  const monthIn=monthIncomes(y,m).reduce((s,i)=>s+Number(i.amount),0);
+  let headSum;
+  if(S.calFilter==="in")headSum='<span style="color:var(--accent-text)">+'+eur(monthIn)+'</span>';
+  else if(S.calFilter==="out")headSum='<span style="color:var(--danger)">−'+eur(monthOut)+'</span>';
+  else headSum='<span style="color:var(--accent-text)">+'+eurShort(monthIn)+'</span> · <span style="color:var(--danger)">−'+eurShort(monthOut)+'</span>';
   let cells=GIORNI.map(g=>'<div class="cal-head">'+g+'</div>').join("");
   for(let i=0;i<startOffset;i++)cells+='<div></div>';
   for(let d=1;d<=daysInMonth;d++){
-    const ex=dayExpenses(y,m,d);
-    const tot=ex.reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
+    const ex=showOut?dayExpenses(y,m,d):[];
+    const inc=showIn?dayIncomes(y,m,d):[];
+    const totOut=ex.reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
+    const totIn=inc.reduce((s,i)=>s+Number(i.amount),0);
     const isToday=today.getFullYear()===y&&today.getMonth()===m&&today.getDate()===d;
-    const dots=[...new Set(ex.map(e=>catById(e.categoryId).color))].slice(0,4)
-      .map(c=>'<span class="cal-dot" style="background:'+c+'"></span>').join("");
+    const dots=[
+      ...(inc.length?['<span class="cal-dot" style="background:var(--accent)"></span>']:[]),
+      ...[...new Set(ex.map(e=>catById(e.categoryId).color))].slice(0,3)
+        .map(c=>'<span class="cal-dot" style="background:'+c+'"></span>')
+    ].join("");
+    const amts=(totIn?'<span class="cal-amt" style="color:var(--accent-text)">+'+eurShort(totIn)+'</span>':"")+
+               (totOut?'<span class="cal-amt" style="color:var(--danger)">−'+eurShort(totOut)+'</span>':"");
     cells+='<div class="cal-day '+(isToday?"today":"")+' '+(S.selDay===d?"sel":"")+'" data-act="cal-day" data-d="'+d+'">'+
-      '<span class="cal-num">'+d+'</span>'+
-      (tot?'<span class="cal-amt">'+eurShort(tot)+'</span>':"")+
+      '<span class="cal-num">'+d+'</span>'+amts+
       '<span class="cal-dots">'+dots+'</span></div>';
   }
   let detail="";
   if(S.selDay){
-    const ex=dayExpenses(y,m,S.selDay);
-    const tot=ex.reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
-    detail='<div class="card"><span class="label">'+S.selDay+' '+MESI_FULL[m]+' '+y+' — '+eur(tot)+'</span>'+
-      (ex.length?ex.map(e=>expenseRow(e,y,m)).join(""):'<div class="empty">Nessuna spesa in questo giorno.</div>')+'</div>';
+    const ex=showOut?dayExpenses(y,m,S.selDay):[];
+    const inc=showIn?dayIncomes(y,m,S.selDay):[];
+    const tOut=ex.reduce((s,e)=>s+(amountFor(e,y,m).val||0),0);
+    const tIn=inc.reduce((s,i)=>s+Number(i.amount),0);
+    let sumLine="";
+    if(tIn&&tOut)sumLine='<span style="color:var(--accent-text)">+'+eur(tIn)+'</span> · <span style="color:var(--danger)">−'+eur(tOut)+'</span>';
+    else if(tIn)sumLine='<span style="color:var(--accent-text)">+'+eur(tIn)+'</span>';
+    else if(tOut)sumLine='<span style="color:var(--danger)">−'+eur(tOut)+'</span>';
+    const body=(inc.map(incomeRow).join(""))+(ex.map(e=>expenseRow(e,y,m)).join(""));
+    detail='<div class="card"><span class="label">'+S.selDay+' '+MESI_FULL[m]+' '+y+' — '+sumLine+'</span>'+
+      (body||'<div class="empty">Nessun movimento in questo giorno.</div>')+'</div>';
   }
+  const fbtn=(id,l)=>'<button class="chip '+(S.calFilter===id?"active":"")+'" data-act="cal-filter" data-id="'+id+'">'+l+'</button>';
   return `
+  <div class="chips" style="margin-bottom:12px">
+    ${fbtn("all","Tutto")}${fbtn("in","Entrate")}${fbtn("out","Uscite")}
+  </div>
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <button class="iconbtn" data-act="cal-month" data-d="-1" style="color:var(--ink)">${icon("chev-l")}</button>
       <div style="text-align:center">
         <div style="font-weight:800;font-size:16.5px;letter-spacing:-.02em">${MESI_FULL[m]} ${y}</div>
-        <div class="small">${eur(monthTot)} nel mese</div>
+        <div class="small">${headSum}</div>
       </div>
       <button class="iconbtn" data-act="cal-month" data-d="1" style="color:var(--ink)">${icon("chev-r")}</button>
     </div>
     <div class="cal">${cells}</div>
-    <div class="small" style="margin-top:12px">Tocca un giorno per vedere le spese. Le ricorrenti compaiono alla loro data di addebito.</div>
+    <div class="small" style="margin-top:12px">Verde = entrate, rosso = uscite. Tocca un giorno per il dettaglio; ricorrenti mostrate alla loro data.</div>
   </div>${detail}`;
 }
 
@@ -983,9 +1034,12 @@ function renderScadenze(){
 
 /* ---------- Entrate ---------- */
 function incomeRow(i){
+  const f=FREQS.find(x=>x.id===i.freq);
   return '<div class="row">'+
     '<span class="dot" style="background:var(--accent)"></span>'+
-    '<div class="rdesc"><div class="rtitle">'+esc(i.desc)+(i.source==="excel"?'<span class="rtag tag-var">Excel</span>':"")+'</div>'+
+    '<div class="rdesc"><div class="rtitle">'+esc(i.desc)+
+      (i.recurring?'<span class="rtag tag-rec">'+(f?f.label:"Ricorrente")+'</span>':"")+
+      (i.source==="excel"?'<span class="rtag tag-var">Excel</span>':"")+'</div>'+
     '<div class="rmeta">'+new Date(i.date+"T00:00:00").toLocaleDateString("it-IT")+'</div></div>'+
     '<div class="ramount" style="color:var(--accent-text)">+'+eur(i.amount)+'</div>'+
     '<button class="iconbtn" data-act="inc-edit" data-id="'+i.id+'">'+icon("pencil",18)+'</button>'+
@@ -1086,6 +1140,13 @@ function openInc(id){
   document.getElementById("i-desc").value=i?i.desc:"";
   document.getElementById("i-amount").value=i?i.amount:"";
   document.getElementById("i-date").value=i?i.date:todayISO();
+  const rec=i?!!i.recurring:false, freq=i&&i.freq?i.freq:"mensile";
+  document.getElementById("i-rec").checked=rec;
+  document.getElementById("i-rec-toggle").classList.toggle("on",rec);
+  document.getElementById("i-freq-wrap").style.display=rec?"block":"none";
+  document.getElementById("i-date-label").textContent=rec?"Prima data":"Data";
+  document.getElementById("i-freqs").innerHTML=FREQS.map(x=>
+    '<button class="chip '+(freq===x.id?"active":"")+'" data-ifreq="'+x.id+'">'+x.label+'</button>').join("");
   document.getElementById("inc-overlay").classList.add("open");
 }
 function closeInc(){incEditId=null;document.getElementById("inc-overlay").classList.remove("open");}
@@ -1093,9 +1154,12 @@ function saveInc(){
   const desc=document.getElementById("i-desc").value.trim();
   const amount=Number(document.getElementById("i-amount").value);
   const date=document.getElementById("i-date").value||todayISO();
+  const rec=document.getElementById("i-rec").checked;
+  const freqBtn=document.querySelector("#i-freqs .chip.active");
+  const freq=rec?(freqBtn?freqBtn.dataset.ifreq:"mensile"):null;
   if(!desc||!amount||amount<=0)return;
-  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date}:x);
-  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual"});
+  if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date,recurring:rec,freq}:x);
+  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual",recurring:rec,freq});
   closeInc();persist();render();
 }
 /* --- excel import --- */
@@ -1602,6 +1666,10 @@ document.addEventListener("click",ev=>{
     document.querySelectorAll("#f-freqs .chip").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");return;
   }
+  if(t.dataset.ifreq!==undefined){
+    document.querySelectorAll("#i-freqs .chip").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");return;
+  }
   if(t.dataset.tcat!==undefined){
     document.querySelectorAll("#t-cats .chip").forEach(x=>x.classList.remove("active"));
     t.classList.add("active");return;
@@ -1626,6 +1694,7 @@ document.addEventListener("click",ev=>{
   else if(act==="month"){const d=new Date(S.viewY,S.viewM+Number(t.dataset.d),1);S.viewY=d.getFullYear();S.viewM=d.getMonth();render();}
   else if(act==="cal-month"){const d=new Date(S.calY,S.calM+Number(t.dataset.d),1);S.calY=d.getFullYear();S.calM=d.getMonth();S.selDay=null;render();}
   else if(act==="cal-day"){S.selDay=Number(t.dataset.d);render();}
+  else if(act==="cal-filter"){S.calFilter=t.dataset.id;render();}
   else if(act==="filter"){S.filterCat=t.dataset.id;render();}
   else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:e.amount!=null?String(e.amount):"",freq:e.freq||"mensile"});}}
   else if(act==="del"){S.expenses=S.expenses.filter(x=>x.id!==t.dataset.id);persist();render();}
@@ -1656,7 +1725,10 @@ document.addEventListener("click",ev=>{
   else if(act==="clear-notice"){S.notice="";render();}
   else if(act==="clear-error"){S.error="";render();}
 });
-document.getElementById("btn-add").addEventListener("click",()=>{S.editId=null;openForm();});
+document.getElementById("btn-add").addEventListener("click",()=>{
+  if(S.tab==="entrate"){openInc(null);}
+  else{S.editId=null;openForm();}
+});
 document.getElementById("btn-scan").addEventListener("click",()=>document.getElementById("scan-input").click());
 document.getElementById("scan-input").addEventListener("change",ev=>{
   const f=ev.target.files&&ev.target.files[0];ev.target.value="";scan(f);
@@ -1691,6 +1763,12 @@ document.getElementById("tpe-cancel").addEventListener("click",closeTpe);
 document.getElementById("tpe-save").addEventListener("click",saveTpe);
 document.getElementById("tpe-overlay").addEventListener("click",ev=>{
   if(ev.target.id==="tpe-overlay")closeTpe();
+});
+document.getElementById("i-rec-toggle").addEventListener("click",()=>{
+  const cb=document.getElementById("i-rec");cb.checked=!cb.checked;
+  document.getElementById("i-rec-toggle").classList.toggle("on",cb.checked);
+  document.getElementById("i-freq-wrap").style.display=cb.checked?"block":"none";
+  document.getElementById("i-date-label").textContent=cb.checked?"Prima data":"Data";
 });
 document.getElementById("inc-cancel").addEventListener("click",closeInc);
 document.getElementById("inc-save").addEventListener("click",saveInc);
