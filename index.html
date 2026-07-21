@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.7";
+const APP_V="6.8";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -548,7 +548,7 @@ const S={
   expenses:[],categories:DEFAULT_CATS.slice(),apiKey:"",
   tab:"riepilogo",viewY:now.getFullYear(),viewM:now.getMonth(),
   calY:now.getFullYear(),calM:now.getMonth(),selDay:null,
-  filterCat:"all",calFilter:"all",editId:null,notice:"",error:"",
+  filterCat:"all",calFilter:"all",chartRange:6,editId:null,notice:"",error:"",
   templates:[],gClientId:"",lastSync:0,savedAt:0,
   incomes:[],lastInvoiceSync:0,incCategories:DEFAULT_INC_CATS.slice(),
   goals:[],taxRate:30,taxSaved:[],
@@ -954,7 +954,10 @@ function renderRiepilogo(){
       <div class="legend">${legend}</div>`
     :`<div class="empty">${icon("pie",34)}Nessuna spesa in questo mese.<br>Usa il pulsante + per iniziare.</div>`}
   </div>
-  <div class="card"><span class="label">Entrate vs uscite — 6 mesi</span>
+  <div class="chips scroll" style="margin-bottom:2px">
+    ${[3,6,12,24].map(n=>'<button class="chip '+(S.chartRange===n?"active":"")+'" data-act="range" data-n="'+n+'">'+(n<12?n+" mesi":(n/12)+(n===12?" anno":" anni"))+'</button>').join("")}
+  </div>
+  <div class="card"><span class="label">Entrate vs uscite — ultimi ${S.chartRange} mesi</span>
     <canvas id="chart-inout" height="185"></canvas>
   </div>
   <div class="card"><span class="label">Uscite vs anno scorso</span>
@@ -979,16 +982,17 @@ function drawCharts(){
       options:{cutout:"70%",responsive:false,
         plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>" "+eur(ctx.raw)}}}}}));
   }
+  const RANGE=S.chartRange||6;
   const labels=[],cur=[],prev=[];
-  for(let i=5;i>=0;i--){
+  for(let i=RANGE-1;i>=0;i--){
     const d=new Date(S.viewY,S.viewM-i,1);
     const yy=d.getFullYear(),mm=d.getMonth();
-    labels.push(MESI[mm]);
+    labels.push(MESI[mm]+(RANGE>12?" "+String(yy).slice(2):""));
     cur.push(monthExpenses(yy,mm).reduce((s,e)=>s+(amountFor(e,yy,mm).val||0),0));
     prev.push(monthExpenses(yy-1,mm).reduce((s,e)=>s+(amountFor(e,yy-1,mm).val||0),0));
   }
   const ins=[],outs=[];
-  for(let i=5;i>=0;i--){
+  for(let i=RANGE-1;i>=0;i--){
     const d=new Date(S.viewY,S.viewM-i,1);
     const yy=d.getFullYear(),mm=d.getMonth();
     ins.push(monthIncomes(yy,mm).reduce((s,x)=>s+Number(x.amount),0));
@@ -1008,7 +1012,7 @@ function drawCharts(){
           x:{ticks:{color:cssv("--muted"),font:{family:"Inter",size:11,weight:"700"}},grid:{display:false},border:{display:false}}}}}));
   }
   const insPrev=[];
-  for(let i=5;i>=0;i--){
+  for(let i=RANGE-1;i>=0;i--){
     const d=new Date(S.viewY,S.viewM-i,1);
     const yy=d.getFullYear(),mm=d.getMonth();
     insPrev.push(monthIncomes(yy-1,mm).reduce((s,x)=>s+Number(x.amount),0));
@@ -1432,9 +1436,11 @@ function renderCategorie(){
 
 /* ---------- Risparmi ---------- */
 function effRate(i){
-  if(i.taxRate!=null&&i.taxRate!=="")return Number(i.taxRate);
-  if(i.categoryId){const c=S.incCategories.find(x=>x.id===i.categoryId);if(c&&c.taxRate!=null&&c.taxRate!=="")return Number(c.taxRate);}
-  return Number(S.taxRate);
+  const num=v=>{const n=Number(v);return isNaN(n)?null:n;};
+  let r=(i.taxRate!=null&&i.taxRate!=="")?num(i.taxRate):null;
+  if(r==null&&i.categoryId){const c=S.incCategories.find(x=>x.id===i.categoryId);if(c)r=(c.taxRate!=null&&c.taxRate!=="")?num(c.taxRate):null;}
+  if(r==null)r=num(S.taxRate);
+  return r==null?0:r;
 }
 function taxDue(y){
   let due=0;
@@ -1444,6 +1450,14 @@ function taxDue(y){
     else if(new Date(i.date+"T00:00:00").getFullYear()===y)due+=Number(i.amount)*rate;
   });
   return due;
+}
+function yearIncome(y){
+  let t=0;
+  S.incomes.forEach(i=>{
+    if(i.recurring){for(let m=0;m<12;m++)if(incDueInMonth(i,y,m))t+=Number(i.amount);}
+    else if(new Date(i.date+"T00:00:00").getFullYear()===y)t+=Number(i.amount);
+  });
+  return t;
 }
 function taxSavedTotal(y){return S.taxSaved.filter(t=>t.year===y).reduce((s,t)=>s+Number(t.amount),0);}
 function renderRisparmi(){
@@ -1481,7 +1495,7 @@ function renderRisparmi(){
       </div>
     </div>
     <div class="hero-total">${eur(saved)}</div>
-    <div class="hero-sub">Da accantonare <b>${eur(due)}</b> · aliquote per categoria</div>
+    <div class="hero-sub">Da accantonare <b>${eur(due)}</b>${(()=>{const inc=yearIncome(y);const ar=inc>0?Math.round(due/inc*100):S.taxRate;return " · ~"+ar+"% di "+eur(inc);})()}</div>
     <div style="height:9px;border-radius:99px;background:rgba(255,255,255,.22);overflow:hidden;margin-top:12px">
       <div style="height:100%;width:${pct}%;background:#fff;border-radius:99px;transition:width .4s"></div>
     </div>
@@ -2024,6 +2038,7 @@ document.addEventListener("click",ev=>{
   else if(act==="cal-month"){const d=new Date(S.calY,S.calM+Number(t.dataset.d),1);S.calY=d.getFullYear();S.calM=d.getMonth();S.selDay=null;render();}
   else if(act==="cal-day"){S.selDay=Number(t.dataset.d);render();}
   else if(act==="cal-filter"){S.calFilter=t.dataset.id;render();}
+  else if(act==="range"){S.chartRange=Number(t.dataset.n);render();}
   else if(act==="filter"){S.filterCat=t.dataset.id;render();}
   else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:e.amount!=null?String(e.amount):"",freq:e.freq||"mensile"});}}
   else if(act==="del"){S.expenses=S.expenses.filter(x=>x.id!==t.dataset.id);persist();render();}
