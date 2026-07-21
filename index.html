@@ -460,6 +460,29 @@
   </div>
 </div>
 
+<!-- confirm modal -->
+<div class="overlay" id="confirm-overlay">
+  <div class="sheet">
+    <div class="grab"></div>
+    <h2 id="confirm-title">Confermi?</h2>
+    <div class="small" id="confirm-msg" style="margin-bottom:16px"></div>
+    <div class="frow">
+      <button class="btn btn-ghost" style="flex:1" id="confirm-no">Annulla</button>
+      <button class="btn btn-primary" style="flex:1" id="confirm-yes">Elimina</button>
+    </div>
+  </div>
+</div>
+
+<!-- toast -->
+<div id="toast" style="position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));
+  transform:translateX(-50%) translateY(20px);z-index:70;background:var(--ink);color:var(--card);
+  padding:12px 18px;border-radius:14px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow);
+  display:flex;align-items:center;gap:14px;opacity:0;pointer-events:none;transition:all .25s;max-width:90vw">
+  <span id="toast-msg"></span>
+  <button id="toast-action" style="background:none;border:none;color:var(--accent-text);font-weight:800;
+    cursor:pointer;font-size:13.5px;padding:0">Annulla</button>
+</div>
+
 <!-- scanning spinner -->
 <div class="overlay" id="spin">
   <div class="spinbox">
@@ -502,7 +525,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="7.5";
+const APP_V="7.6";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -614,6 +637,13 @@ function gEnsureClient(){
     });
   }
   return gTC;
+}
+function gAutoSync(){
+  const tc=gEnsureClient();
+  if(!tc)return;
+  if(gTokenValid()){syncNow();return;}
+  // prompt:"none" => no popup; succeeds only if already consented this browser
+  try{tc.requestAccessToken({prompt:"none"});}catch(e){}
 }
 function gSync(){
   const tc=gEnsureClient();
@@ -796,6 +826,20 @@ async function syncInvoices(silent){
 
 /* ================= UTILS ================= */
 const eur=n=>new Intl.NumberFormat("it-IT",{style:"currency",currency:"EUR"}).format(n||0);
+// Parse a user-typed amount tolerating Italian comma decimals and thousands dots.
+const euroNum=v=>{
+  if(v==null)return NaN;
+  let s=String(v).trim().replace(/[€\s]/g,"");
+  if(s==="")return NaN;
+  if(s.includes(",")&&s.includes(".")){ // 1.234,56 -> 1234.56
+    s=s.replace(/\./g,"").replace(",",".");
+  }else if(s.includes(",")){ // 12,50 -> 12.50
+    s=s.replace(",",".");
+  }
+  const n=Number(s);
+  return isNaN(n)?NaN:n;
+};
+const uid=p=>(p||"x")+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const eurShort=n=>n>=1000?(n/1000).toFixed(1).replace(".",",")+"k":Math.round(n)+"€";
 const todayISO=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1317,7 +1361,7 @@ function openInc(id){
 function closeInc(){incEditId=null;document.getElementById("inc-overlay").classList.remove("open");}
 function saveInc(){
   const desc=document.getElementById("i-desc").value.trim();
-  const amount=Number(document.getElementById("i-amount").value);
+  const amount=euroNum(document.getElementById("i-amount").value);
   const date=document.getElementById("i-date").value||todayISO();
   const rec=document.getElementById("i-rec").checked;
   const freqBtn=document.querySelector("#i-freqs .chip.active");
@@ -1325,9 +1369,9 @@ function saveInc(){
   const catBtn=document.querySelector("#i-cats .chip.active");
   const categoryId=catBtn?catBtn.dataset.icat:(S.incCategories[0]&&S.incCategories[0].id);
   const rv=document.getElementById("i-rate").value;
-  const taxRate=rv===""?null:Number(rv);
+  const taxRate=(rv===""||rv==null)?null:euroNum(rv);
   if(incEditId)S.incomes=S.incomes.map(x=>x.id===incEditId?{...x,desc,amount,date,recurring:rec,freq,categoryId,taxRate}:x);
-  else S.incomes.unshift({id:"i"+Date.now(),desc,amount,date,source:"manual",recurring:rec,freq,categoryId,taxRate});
+  else S.incomes.unshift({id:uid("i"),desc,amount,date,source:"manual",recurring:rec,freq,categoryId,taxRate});
   closeInc();persist();render();
 }
 /* --- excel import --- */
@@ -1544,10 +1588,10 @@ function closeGoal(){goalEditId=null;document.getElementById("goal-overlay").cla
 function saveGoal(){
   const name=document.getElementById("g-name").value.trim();
   if(!name)return;
-  const target=Number(document.getElementById("g-target").value)||0;
-  const saved=Number(document.getElementById("g-saved").value)||0;
+  const target=euroNum(document.getElementById("g-target").value)||0;
+  const saved=euroNum(document.getElementById("g-saved").value)||0;
   if(goalEditId)S.goals=S.goals.map(g=>g.id===goalEditId?{...g,name,target,saved,color:goalColorSel}:g);
-  else S.goals.push({id:"g"+Date.now(),name,target,saved,color:goalColorSel});
+  else S.goals.push({id:uid("g"),name,target,saved,color:goalColorSel});
   closeGoal();persist();render();
 }
 let moveId=null,moveDir=1;
@@ -1561,7 +1605,7 @@ function openMove(id,dir){
 }
 function closeMove(){moveId=null;document.getElementById("move-overlay").classList.remove("open");}
 function saveMove(){
-  const amt=Number(document.getElementById("mv-amount").value);
+  const amt=euroNum(document.getElementById("mv-amount").value);
   if(!moveId||!amt||amt<=0)return;
   S.goals=S.goals.map(g=>{
     if(g.id!==moveId)return g;
@@ -1573,14 +1617,14 @@ function saveMove(){
 function openTax(){document.getElementById("tx-rate").value=S.taxRate;document.getElementById("tax-overlay").classList.add("open");}
 function closeTax(){document.getElementById("tax-overlay").classList.remove("open");}
 function saveTax(){
-  const r=Number(document.getElementById("tx-rate").value);
+  const r=euroNum(document.getElementById("tx-rate").value);
   if(isNaN(r)||r<0||r>100)return;
   S.taxRate=r;closeTax();persist();render();
 }
 function openTaxMove(){document.getElementById("txm-amount").value="";document.getElementById("txmove-overlay").classList.add("open");}
 function closeTaxMove(){document.getElementById("txmove-overlay").classList.remove("open");}
 function saveTaxMove(){
-  const amt=Number(document.getElementById("txm-amount").value);
+  const amt=euroNum(document.getElementById("txm-amount").value);
   if(!amt)return;
   S.taxSaved.push({year:S.viewY,amount:amt,date:todayISO()});
   closeTaxMove();persist();render();
@@ -1695,7 +1739,7 @@ function openForm(pre){
 function closeForm(){S.editId=null;document.getElementById("form-overlay").classList.remove("open");}
 function saveForm(){
   const desc=document.getElementById("f-desc").value.trim();
-  const amount=Number(document.getElementById("f-amount").value);
+  const amount=euroNum(document.getElementById("f-amount").value);
   const rec=document.getElementById("f-rec").checked;
   const isVar=rec&&document.getElementById("f-var").checked;
   if(!desc)return;
@@ -1704,7 +1748,7 @@ function saveForm(){
   const freqBtn=document.querySelector("#f-freqs .chip.active");
   const prev=S.editId?S.expenses.find(x=>x.id===S.editId):null;
   const record={
-    id:S.editId||"e"+Date.now(),desc,
+    id:S.editId||uid("e"),desc,
     amount:isVar?(amount>0?amount:null):amount,
     variable:isVar,
     history:prev&&prev.history?prev.history:[],
@@ -1745,12 +1789,12 @@ function saveCat(){
   if(!name)return;
   if(catMode==="inc"){
     const rv=document.getElementById("c-rate").value;
-    const taxRate=rv===""?null:Number(rv);
+    const taxRate=(rv===""||rv==null)?null:euroNum(rv);
     if(catEditId)S.incCategories=S.incCategories.map(c=>c.id===catEditId?{...c,name,color:catColorSel,taxRate}:c);
-    else S.incCategories.push({id:"ic"+Date.now(),name,color:catColorSel,taxRate});
+    else S.incCategories.push({id:uid("ic"),name,color:catColorSel,taxRate});
   }else{
     if(catEditId)S.categories=S.categories.map(c=>c.id===catEditId?{...c,name,color:catColorSel}:c);
-    else S.categories.push({id:"c"+Date.now(),name,color:catColorSel});
+    else S.categories.push({id:uid("c"),name,color:catColorSel});
   }
   closeCat();persist();render();
 }
@@ -1822,7 +1866,7 @@ function openTpe(id){
 function closeTpe(){tpeId=null;document.getElementById("tpe-overlay").classList.remove("open");}
 function saveTpe(){
   const desc=document.getElementById("t-desc").value.trim();
-  const amount=Number(document.getElementById("t-amount").value);
+  const amount=euroNum(document.getElementById("t-amount").value);
   const isVar=document.getElementById("t-var").checked;
   if(!desc)return;
   if(!isVar&&(!amount||amount<=0))return;
@@ -1830,7 +1874,7 @@ function saveTpe(){
   const freqBtn=document.querySelector("#t-freqs .chip.active");
   const prev=tpeId?S.templates.find(x=>x.id===tpeId):null;
   const rec={
-    id:tpeId||"t"+Date.now(),
+    id:tpeId||uid("t"),
     group:prev?prev.group:"Personalizzate",
     desc,cat:catBtn?catBtn.dataset.tcat:"altro",
     freq:freqBtn?freqBtn.dataset.tfreq:"mensile",
@@ -1853,7 +1897,7 @@ function openBill(id){
 }
 function closeBill(){billId=null;document.getElementById("bill-overlay").classList.remove("open");}
 function saveBill(){
-  const amount=Number(document.getElementById("b-amount").value);
+  const amount=euroNum(document.getElementById("b-amount").value);
   const date=document.getElementById("b-date").value||todayISO();
   if(!billId||!amount||amount<=0)return;
   const d=new Date(date+"T00:00:00");
@@ -2016,6 +2060,46 @@ async function forceUpdate(){
   location.reload();
 }
 
+/* ================= CONFIRM + TOAST ================= */
+let confirmCb=null;
+function askConfirm(msg,onYes,yesLabel){
+  confirmCb=onYes;
+  document.getElementById("confirm-msg").textContent=msg;
+  document.getElementById("confirm-yes").textContent=yesLabel||"Elimina";
+  document.getElementById("confirm-overlay").classList.add("open");
+}
+function closeConfirm(){confirmCb=null;document.getElementById("confirm-overlay").classList.remove("open");}
+
+let toastTimer=null,undoCb=null;
+function showToast(msg,onUndo){
+  undoCb=onUndo||null;
+  const t=document.getElementById("toast");
+  document.getElementById("toast-msg").textContent=msg;
+  document.getElementById("toast-action").style.display=onUndo?"block":"none";
+  t.style.opacity="1";t.style.transform="translateX(-50%) translateY(0)";t.style.pointerEvents="auto";
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(hideToast,4000);
+}
+function hideToast(){
+  const t=document.getElementById("toast");
+  t.style.opacity="0";t.style.transform="translateX(-50%) translateY(20px)";t.style.pointerEvents="none";
+  undoCb=null;
+}
+// Delete an item from an array by id, with an undo toast that restores it at its position.
+function deleteWithUndo(getArr,setArr,id,label){
+  const arr=getArr();
+  const idx=arr.findIndex(x=>x.id===id);
+  if(idx===-1)return;
+  const item=arr[idx];
+  setArr(arr.filter(x=>x.id!==id));
+  persist();render();
+  showToast((label||"Elemento")+" eliminato",()=>{
+    const cur=getArr();
+    const restored=cur.slice();restored.splice(Math.min(idx,restored.length),0,item);
+    setArr(restored);persist();render();hideToast();
+  });
+}
+
 /* ================= EVENTS ================= */
 document.addEventListener("click",ev=>{
   const t=ev.target.closest("[data-act],[data-fcat],[data-ffreq],[data-ifreq],[data-icat],[data-tcat],[data-tfreq],[data-ccolor],[data-gcolor]");
@@ -2067,12 +2151,12 @@ document.addEventListener("click",ev=>{
   else if(act==="range"){S.chartRange=Number(t.dataset.n);render();}
   else if(act==="filter"){S.filterCat=t.dataset.id;render();}
   else if(act==="edit"){const e=S.expenses.find(x=>x.id===t.dataset.id);if(e){S.editId=e.id;openForm({...e,amount:e.amount!=null?String(e.amount):"",freq:e.freq||"mensile"});}}
-  else if(act==="del"){S.expenses=S.expenses.filter(x=>x.id!==t.dataset.id);persist();render();}
+  else if(act==="del"){deleteWithUndo(()=>S.expenses,a=>S.expenses=a,t.dataset.id,"Spesa");}
   else if(act==="cat-new"){openCat(null,"exp");}
   else if(act==="cat-edit"){openCat(t.dataset.id,"exp");}
   else if(act==="goal-new"){openGoal(null);}
   else if(act==="goal-edit"){openGoal(t.dataset.id);}
-  else if(act==="goal-del"){S.goals=S.goals.filter(g=>g.id!==t.dataset.id);persist();render();}
+  else if(act==="goal-del"){deleteWithUndo(()=>S.goals,a=>S.goals=a,t.dataset.id,"Obiettivo");}
   else if(act==="goal-add-money"){openMove(t.dataset.id,1);}
   else if(act==="goal-take-money"){openMove(t.dataset.id,-1);}
   else if(act==="tax-settings"){openTax();}
@@ -2080,27 +2164,31 @@ document.addEventListener("click",ev=>{
   else if(act==="icat-new"){openCat(null,"inc");}
   else if(act==="icat-edit"){openCat(t.dataset.id,"inc");}
   else if(act==="icat-del"){
-    const id=t.dataset.id;
-    S.incomes=S.incomes.map(i=>i.categoryId===id?{...i,categoryId:"ic-altro"}:i);
-    S.incCategories=S.incCategories.filter(c=>c.id!==id);persist();render();
+    const id=t.dataset.id;const c=incCatById(id);
+    askConfirm("Eliminare la categoria \""+c.name+"\"? Le entrate collegate passeranno ad \"Altro\".",()=>{
+      S.incomes=S.incomes.map(i=>i.categoryId===id?{...i,categoryId:"ic-altro"}:i);
+      S.incCategories=S.incCategories.filter(c=>c.id!==id);persist();closeConfirm();render();
+    });
   }
   else if(act==="delcat"){
-    const id=t.dataset.id;
-    S.expenses=S.expenses.map(e=>e.categoryId===id?{...e,categoryId:"altro"}:e);
-    S.categories=S.categories.filter(c=>c.id!==id);persist();render();
+    const id=t.dataset.id;const c=catById(id);
+    askConfirm("Eliminare la categoria \""+c.name+"\"? Le spese collegate passeranno ad \"Altro\".",()=>{
+      S.expenses=S.expenses.map(e=>e.categoryId===id?{...e,categoryId:"altro"}:e);
+      S.categories=S.categories.filter(c=>c.id!==id);persist();closeConfirm();render();
+    });
   }
   else if(act==="savekey"){S.apiKey=document.getElementById("apikey").value.trim();S.notice="Chiave API salvata.";persist();render();}
   else if(act==="g-save"){S.gClientId=document.getElementById("gclientid").value.trim();gTC=null;S.notice="Client ID salvato. Ora premi \"Sincronizza\".";persistLocal();render();}
   else if(act==="g-sync"){gSync();}
   else if(act==="templates"){openTpl();}
   else if(act==="tpl-edit"){openTpe(t.dataset.id);}
-  else if(act==="tpl-del"){S.templates=S.templates.filter(x=>x.id!==t.dataset.id);persist();openTpl();}
+  else if(act==="tpl-del"){const tp=S.templates.find(x=>x.id===t.dataset.id);askConfirm("Rimuovere la voce \""+(tp?tp.desc:"")+"\" dal catalogo?",()=>{S.templates=S.templates.filter(x=>x.id!==t.dataset.id);persist();closeConfirm();openTpl();});}
   else if(act==="tpl-new"){openTpe(null);}
   else if(act==="year"){S.viewY+=Number(t.dataset.d);render();}
   else if(act==="inc-drive"){syncInvoices(false);}
   else if(act==="inc-new"){openInc(null);}
   else if(act==="inc-edit"){openInc(t.dataset.id);}
-  else if(act==="inc-del"){S.incomes=S.incomes.filter(x=>x.id!==t.dataset.id);persist();render();}
+  else if(act==="inc-del"){deleteWithUndo(()=>S.incomes,a=>S.incomes=a,t.dataset.id,"Entrata");}
   else if(act==="imp-excel"){document.getElementById("xls-input").click();}
   else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
@@ -2117,9 +2205,11 @@ document.addEventListener("click",ev=>{
   }
   else if(act==="clear-invoices"){
     const before=S.incomes.filter(i=>i.source==="excel").length;
-    S.incomes=S.incomes.filter(i=>i.source!=="excel");
-    S.notice=before+(before===1?" fattura importata rimossa. Ora usa \"Aggiorna da Drive\".":" fatture importate rimosse. Ora usa \"Aggiorna da Drive\".");
-    persist();render();
+    askConfirm("Azzerare tutte le "+before+" fatture importate da Excel? Le entrate manuali restano. Potrai reimportarle con \"Aggiorna da Drive\".",()=>{
+      S.incomes=S.incomes.filter(i=>i.source!=="excel");
+      S.notice=before+(before===1?" fattura rimossa.":" fatture rimosse.")+" Usa \"Aggiorna da Drive\".";
+      persist();closeConfirm();render();
+    });
   }
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
@@ -2193,6 +2283,10 @@ document.getElementById("tax-overlay").addEventListener("click",ev=>{if(ev.targe
 document.getElementById("txmove-cancel").addEventListener("click",closeTaxMove);
 document.getElementById("txmove-save").addEventListener("click",saveTaxMove);
 document.getElementById("txmove-overlay").addEventListener("click",ev=>{if(ev.target.id==="txmove-overlay")closeTaxMove();});
+document.getElementById("confirm-no").addEventListener("click",closeConfirm);
+document.getElementById("confirm-yes").addEventListener("click",()=>{if(confirmCb)confirmCb();});
+document.getElementById("confirm-overlay").addEventListener("click",ev=>{if(ev.target.id==="confirm-overlay")closeConfirm();});
+document.getElementById("toast-action").addEventListener("click",()=>{if(undoCb)undoCb();});
 document.getElementById("bill-cancel").addEventListener("click",closeBill);
 document.getElementById("bill-save").addEventListener("click",saveBill);
 document.getElementById("bill-overlay").addEventListener("click",ev=>{
@@ -2255,6 +2349,17 @@ document.addEventListener("touchmove",e=>{if(e.touches.length>1)e.preventDefault
   render();
   if("serviceWorker" in navigator&&location.protocol==="https:"){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+  // Silent Drive sync on startup if a Client ID is configured (waits for the GIS lib).
+  if(S.gClientId){
+    let tries=0;
+    const t=setInterval(()=>{
+      tries++;
+      if(window.google&&google.accounts&&google.accounts.oauth2){
+        clearInterval(t);
+        try{gAutoSync();}catch(e){}
+      }else if(tries>30){clearInterval(t);}
+    },400);
   }
 })();
 </script>
