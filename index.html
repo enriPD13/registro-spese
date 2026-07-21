@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Registro Spese</title>
@@ -24,7 +24,6 @@
     --danger:#D9534A; --warn-bg:#FDF1EC;
     --hero-a:#0FA36B; --hero-b:#0B5E4A;
     --shadow:0 8px 28px rgba(22,24,29,.08);
-    --bar-prev:#FFFFFF;
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -34,13 +33,18 @@
       --danger:#E06A61; --warn-bg:#2A1F1C;
       --hero-a:#0E8F60; --hero-b:#0A4A3B;
       --shadow:0 8px 28px rgba(0,0,0,.35);
-      --bar-prev:#E9ECEF;
     }
   }
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{overscroll-behavior:none}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;
+    -webkit-touch-callout:none}
   body{margin:0;background:var(--canvas);color:var(--ink);
     font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
-    font-size:15px;line-height:1.45}
+    font-size:15px;line-height:1.45;
+    overscroll-behavior:none;overflow-x:hidden;
+    -webkit-user-select:none;user-select:none;
+    touch-action:pan-y}
+  input,textarea{-webkit-user-select:text;user-select:text}
   button{font-family:inherit}
 
   /* header */
@@ -497,7 +501,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="7.3";
+const APP_V="7.4";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1028,7 +1032,7 @@ function drawCharts(){
     charts.push(new Chart(yInEl,{type:"bar",
       data:{labels,datasets:[
         {label:"Quest'anno",data:ins,backgroundColor:cssv("--accent"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
-        {label:"Anno scorso",data:insPrev,backgroundColor:cssv("--bar-prev"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Anno scorso",data:insPrev,backgroundColor:cssv("--line"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
       ]},
       options:{responsive:true,
         plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
@@ -1041,7 +1045,7 @@ function drawCharts(){
     charts.push(new Chart(yEl,{type:"bar",
       data:{labels,datasets:[
         {label:"Quest'anno",data:cur,backgroundColor:"#D9836B",borderRadius:7,barPercentage:.85,categoryPercentage:.55},
-        {label:"Anno scorso",data:prev,backgroundColor:cssv("--bar-prev"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
+        {label:"Anno scorso",data:prev,backgroundColor:cssv("--line"),borderRadius:7,barPercentage:.85,categoryPercentage:.55},
       ]},
       options:{responsive:true,
         plugins:{legend:{position:"bottom",labels:{color:cssv("--muted"),boxWidth:10,boxHeight:10,borderRadius:5,useBorderRadius:true,font:{family:"Inter",size:11,weight:"700"}}},
@@ -2211,6 +2215,20 @@ function afterRender(){
   if(S.tab==="riepilogo"){drawCharts();animateTotal();}
   if(S.tab==="entrate")drawIncomeCharts();
 }
+
+/* ================= NATIVE-LIKE GESTURES ================= */
+// Block pinch-zoom (Safari gesture events) and double-tap zoom
+document.addEventListener("gesturestart",e=>e.preventDefault());
+document.addEventListener("gesturechange",e=>e.preventDefault());
+document.addEventListener("gestureend",e=>e.preventDefault());
+let lastTouchEnd=0;
+document.addEventListener("touchend",e=>{
+  const now=Date.now();
+  if(now-lastTouchEnd<=300)e.preventDefault();
+  lastTouchEnd=now;
+},{passive:false});
+// Block multi-touch pinch
+document.addEventListener("touchmove",e=>{if(e.touches.length>1)e.preventDefault();},{passive:false});
 
 /* ================= INIT ================= */
 (async function(){
