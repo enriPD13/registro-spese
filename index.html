@@ -495,7 +495,7 @@ function mountStaticIcons(){
 }
 
 /* ================= CONSTANTS ================= */
-const APP_V="6.3";
+const APP_V="6.4";
 const FREQS=[
   {id:"mensile",label:"Mensile",months:1},
   {id:"bimestrale",label:"Bimestrale",months:2},
@@ -1609,6 +1609,11 @@ function renderImpostazioni(){
     <button class="btn btn-ghost" data-act="update">Cerca aggiornamenti</button>
   </div>
   <div class="card">
+    <span class="label">Manutenzione fatture</span>
+    <div class="small" style="margin-bottom:12px">Se hai importato fatture di anni diversi prima dell'aggiornamento, alcune potrebbero avere l'anno sbagliato. Questo pulsante riallinea la data di ogni fattura all'anno del suo file di origine.</div>
+    <button class="btn btn-ghost" data-act="repair-inv">Correggi anni fatture</button>
+  </div>
+  <div class="card">
     <span class="label">Usare l'app sull'iPhone</span>
     <div class="small">1. Apri l'indirizzo dell'app in Safari.<br>
     2. Tocca Condividi → "Aggiungi alla schermata Home": diventa un'app a schermo intero.<br>
@@ -1946,6 +1951,23 @@ function importBackup(file){
   r.readAsText(file);
 }
 
+/* ================= REPAIR INVOICE DATES ================= */
+function repairInvoiceYears(){
+  let fixed=0;
+  S.incomes=S.incomes.map(i=>{
+    if(i.source!=="excel"||i.invYear==null)return i;
+    const d=new Date(i.date+"T00:00:00");
+    if(d.getFullYear()===i.invYear)return i;
+    // realign year, keep month/day
+    const nd=i.invYear+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    fixed++;
+    return {...i,date:nd};
+  });
+  if(fixed>0){S.notice=fixed+(fixed===1?" fattura risistemata":" fatture risistemate")+" all'anno corretto.";persist();}
+  else{S.notice="Nessuna fattura da correggere.";persistLocal();}
+  render();
+}
+
 /* ================= UPDATE ================= */
 async function forceUpdate(){
   try{
@@ -2048,6 +2070,7 @@ document.addEventListener("click",ev=>{
   else if(act==="imp-excel"){document.getElementById("xls-input").click();}
   else if(act==="bill"){openBill(t.dataset.id);}
   else if(act==="update"){forceUpdate();}
+  else if(act==="repair-inv"){repairInvoiceYears();}
   else if(act==="export")exportBackup();
   else if(act==="import")document.getElementById("import-input").click();
   else if(act==="clear-notice"){S.notice="";render();}
